@@ -1,0 +1,39 @@
+GIMP Palette
+Name: Wuxia Pixel Palette
+Columns: 8
+#
+
+245 242 236 Paper White         # 宣纸白 / 背景高光
+210 205 196 Pale Ink            # 淡墨灰
+170 165 156 Warm Gray           # 暖灰
+120 118 112 Stone Gray          # 石灰
+60  60  60  Dark Ink            # 浓墨
+25  25  25  Night Black         # 夜墨黑
+
+34  74  58  Bamboo Green        # 竹青
+64  112  86 Moss Green          # 苔藓绿
+92  138  112 Jade Green         # 玉青
+24  48  42  Deep Green          # 深林绿
+
+92  76  52  Earth Brown         # 土褐
+122 92  62  Wood Brown          # 木色
+156 118 78  Light Wood          # 浅木
+
+138 44  44  Blood Red           # 血色 / 攻击
+176 64  48  Dark Red             # 暗红
+220 96  64  Vermilion            # 朱砂红
+
+44  64  92  Ink Blue            # 青衣
+72  96  132 Steel Blue          # 铁青
+108 138 172 Sky Blue            # 内力蓝
+
+92  92  92  Iron Gray           # 铁器
+132 132 132 Steel Light         # 金属高光
+168 148 92  Old Gold            # 暗金
+212 188 124 Gold Light          # 金饰高光
+
+88  64  112 Purple Shadow       # 神秘/邪派
+132 92  156 Mystic Purple       # 妖气/法术
+
+255 220 120 Talisman Yellow     # 符箓黄
+255 255 180 Light Glow          # 发光/特效

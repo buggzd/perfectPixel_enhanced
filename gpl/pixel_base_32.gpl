@@ -1,0 +1,36 @@
+GIMP Palette
+Name: Pixel Base 32
+Columns: 8
+#
+
+0     0     0     Black
+34    32    52    Dark Blue Gray
+69    40    60    Dark Purple
+102   57    49    Dark Brown
+143   86    59    Brown
+223   113   38    Orange
+217   160   102   Light Brown
+238   195   154   Beige
+
+69    69    69    Dark Gray
+102   102   102   Gray
+143   143   143   Light Gray
+223   223   223   Off White
+255   255   255   White
+
+48    96    130   Dark Blue
+91    110   225   Blue
+99    155   255   Light Blue
+155   195   255   Sky Blue
+
+64    130   109   Dark Green
+91    171   98    Green
+153   229   80    Light Green
+
+130   64    64    Dark Red
+171   91    91    Red
+229   153   153   Light Red
+
+130   64    109   Dark Magenta
+171   91    155   Magenta
+229   153   195   Light Magenta

@@ -12,3 +12,4 @@ output/
 *.log
 
 .DS_Store
+*.pyc

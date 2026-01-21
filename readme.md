@@ -53,14 +53,30 @@ prompt: Convert the input image into a TRUE perler bead pixel pattern designed f
 
 The image is in pixel style but the grids are distorted. Also we don't know the number of grids.
 
+### Optional preprocessing: Quantize palette
+If you want to constrain colors to a palette before refining, use `quantize`:
+
+```python
+from perfect_pixel import quantize
+from perfect_pixel.palette_quantization import load_gpl_palette
+
+palette = load_gpl_palette("gpl/pixel_base_64.gpl")
+rgb = quantize(rgb, palette=palette, color_space="lab")
+```
+
 ### Step 2: Use Perfect Pixel to refine your image
 
 ```python
 import cv2
-from perfect_pixel import get_perfect_pixel
+from perfect_pixel import get_perfect_pixel, quantize
+from perfect_pixel.palette_quantization import load_gpl_palette
 
 bgr = cv2.imread("images/avatar.png", cv2.IMREAD_COLOR)
 rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+
+# Optional: quantize to a palette before refinement
+palette = load_gpl_palette("gpl/pixel_base_64.gpl")
+rgb = quantize(rgb, palette=palette, color_space="lab")
 
 w, h, out = get_perfect_pixel(rgb)
 ```
