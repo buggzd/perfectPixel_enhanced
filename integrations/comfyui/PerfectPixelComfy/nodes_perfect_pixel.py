@@ -43,22 +43,22 @@ def _load_backend(backend: str):
     returns: get_perfect_pixel callable
     """
     if backend == "Lightweight Backend":
-        from .perfect_pixel_noCV2 import get_perfect_pixel
+        from perfect_pixel_noCV2 import get_perfect_pixel
         return get_perfect_pixel
 
     if backend == "OpenCV Backend":
         # hard-require cv2
         import cv2  # noqa: F401
-        from .perfect_pixel import get_perfect_pixel
+        from perfect_pixel import get_perfect_pixel
         return get_perfect_pixel
 
     # Auto: prefer OpenCV if available, else fallback
     try:
         import cv2  # noqa: F401
-        from .perfect_pixel import get_perfect_pixel
+        from perfect_pixel import get_perfect_pixel
         return get_perfect_pixel
     except Exception:
-        from .perfect_pixel_noCV2 import get_perfect_pixel
+        from perfect_pixel_noCV2 import get_perfect_pixel
         return get_perfect_pixel
 
 
