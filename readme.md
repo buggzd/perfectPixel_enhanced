@@ -126,22 +126,6 @@ Set `adaptive_grid=false` and `temporal_smoothing=false` together to reproduce t
 
 ---
 
-## 🚀 Continuous Delivery
-Pushing a `v*` tag triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml), which builds the Python wheel + sdist and publishes a GitHub Release with the artifacts attached (auto-generated release notes):
-
-```bash
-git tag v0.1.4
-git push origin v0.1.4
-```
-
-Releases land on the [GitHub Releases page](https://github.com/buggzd/perfectPixel_enhanced/releases). Install the published wheel directly:
-
-```bash
-pip install perfect_pixel-0.1.4-py3-none-any.whl
-```
-
----
-
 ## 🧮 Algorithm Overview
 The core algorithm runs in three primary stages:
 1. **Grid Detection**: Estimates optimal grid spacing from the Fast Fourier Transform (FFT) magnitude of the image luminance.

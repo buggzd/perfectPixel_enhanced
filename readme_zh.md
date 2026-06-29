@@ -124,22 +124,6 @@ curl http://127.0.0.1:8765/api/jobs/<job_id>
 
 ---
 
-## 🚀 持续交付
-推送 `v*` 形式的 tag 会触发 [`.github/workflows/release.yml`](./.github/workflows/release.yml)，自动构建 Python wheel + sdist 并发布 GitHub Release（附带产物、自动生成发版说明）：
-
-```bash
-git tag v0.1.4
-git push origin v0.1.4
-```
-
-发版产物位于 [GitHub Releases](https://github.com/buggzd/perfectPixel_enhanced/releases)，可直接安装：
-
-```bash
-pip install perfect_pixel-0.1.4-py3-none-any.whl
-```
-
----
-
 ## 🧮 算法原理概述
 核心算法包含以下三个主要步骤：
 1. **网格大小估算**：通过对图像亮度进行快速傅里叶变换 (FFT)，分析频域幅度来估算最佳网格尺寸并生成基础网格。
