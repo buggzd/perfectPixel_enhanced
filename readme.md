@@ -92,15 +92,22 @@ Try integrate it into your own projects!
 
 This fork extends Perfect Pixel to **video**: extract frames → refine each frame to a perfectly aligned pixel grid → output a PNG frame sequence. The pixel grid size is **auto-detected on the first frame and locked for all subsequent frames** to keep the sequence temporally stable (no per-frame flicker).
 
-A FastAPI backend exposes the pipeline over HTTP, designed to be driven by a Tauri front-end (or any HTTP client). The front-end is not included in this stage — see the interface contract in [`docs/API.md`](./docs/API.md).
+A FastAPI backend exposes the pipeline over HTTP, which is driven by the Tauri desktop front-end app. See the interface contract in [`docs/API.md`](./docs/API.md).
 
 ```bash
 # 1. Setup (Python 3.11/3.12 recommended for opencv wheels)
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Run the API server (sidecar for Tauri)
+# 2. Run the API server
 python -m api.run            # http://127.0.0.1:8765
+```
+
+### Tauri Desktop Frontend Setup
+```bash
+# In another terminal window:
+cd frontend
+npm run tauri dev            # Launches the desktop GUI
 ```
 
 Quick test:
