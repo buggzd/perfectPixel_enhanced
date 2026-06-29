@@ -1,6 +1,20 @@
-// API client for connecting to the FastAPI backend at 127.0.0.1:8765
+// API client for connecting to the FastAPI backend.
+//
+// The backend base URL is resolved at runtime (the Tauri shell picks a free
+// port and spawns the Python sidecar, then exposes its URL via the
+// `backend_url` command). The frontend calls `setBaseUrl` during boot before
+// issuing any request. A sensible default is kept so plain `npm run dev`
+// (without Tauri) still talks to a manually-started `python -m api.run`.
 
-export const BASE_URL = "http://127.0.0.1:8765";
+let baseUrl = "http://127.0.0.1:8765";
+
+export function getBaseUrl(): string {
+  return baseUrl;
+}
+
+export function setBaseUrl(url: string): void {
+  baseUrl = url.replace(/\/+$/, "");
+}
 
 export interface JobOptions {
   sample_method: "majority" | "center" | "median";
@@ -39,7 +53,7 @@ export interface ListFramesResponse {
  */
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE_URL}/api/health`);
+    const res = await fetch(`${getBaseUrl()}/api/health`);
     if (!res.ok) return false;
     const data = await res.json();
     return data.status === "ok";
@@ -58,14 +72,14 @@ export async function createJob(
   const formData = new FormData();
   formData.append("video", videoFile);
   formData.append("sample_method", options.sample_method);
-  
+
   if (options.grid_size_w !== null) {
     formData.append("grid_size_w", options.grid_size_w.toString());
   }
   if (options.grid_size_h !== null) {
     formData.append("grid_size_h", options.grid_size_h.toString());
   }
-  
+
   formData.append("refine_intensity", options.refine_intensity.toString());
   formData.append("fix_square", options.fix_square ? "true" : "false");
   formData.append("min_size", options.min_size.toString());
@@ -73,7 +87,7 @@ export async function createJob(
   formData.append("output_scale", options.output_scale.toString());
   formData.append("every_n_frames", options.every_n_frames.toString());
 
-  const res = await fetch(`${BASE_URL}/api/jobs`, {
+  const res = await fetch(`${getBaseUrl()}/api/jobs`, {
     method: "POST",
     body: formData,
   });
@@ -90,7 +104,7 @@ export async function createJob(
  * Gets the current status of a job
  */
 export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
-  const res = await fetch(`${BASE_URL}/api/jobs/${jobId}`);
+  const res = await fetch(`${getBaseUrl()}/api/jobs/${jobId}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch job status for ${jobId}`);
   }
@@ -101,7 +115,7 @@ export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
  * Lists the output frames processed so far
  */
 export async function getJobFrames(jobId: string): Promise<ListFramesResponse> {
-  const res = await fetch(`${BASE_URL}/api/jobs/${jobId}/frames`);
+  const res = await fetch(`${getBaseUrl()}/api/jobs/${jobId}/frames`);
   if (!res.ok) {
     throw new Error(`Failed to list frames for ${jobId}`);
   }
@@ -112,14 +126,14 @@ export async function getJobFrames(jobId: string): Promise<ListFramesResponse> {
  * Gets the direct URL of a single frame image for rendering in <img>
  */
 export function getFrameUrl(jobId: string, frameName: string): string {
-  return `${BASE_URL}/api/jobs/${jobId}/frames/${frameName}`;
+  return `${getBaseUrl()}/api/jobs/${jobId}/frames/${frameName}`;
 }
 
 /**
  * Cancels and deletes a job from the backend, freeing up space
  */
 export async function deleteJob(jobId: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/jobs/${jobId}`, {
+  const res = await fetch(`${getBaseUrl()}/api/jobs/${jobId}`, {
     method: "DELETE",
   });
   if (!res.ok) {

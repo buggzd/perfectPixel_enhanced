@@ -88,29 +88,53 @@ The grid size is automatically detected, and the image is refined.
 
 Try integrate it into your own projects!
 
-## Video → Perfect Pixel (HTTP API)
+## Video → Perfect Pixel (Desktop App)
 
 This fork extends Perfect Pixel to **video**: extract frames → refine each frame to a perfectly aligned pixel grid → output a PNG frame sequence. The pixel grid size is **auto-detected on the first frame and locked for all subsequent frames** to keep the sequence temporally stable (no per-frame flicker).
 
-A FastAPI backend exposes the pipeline over HTTP, which is driven by the Tauri desktop front-end app. See the interface contract in [`docs/API.md`](./docs/API.md).
+The app is a **self-contained Tauri desktop shell** that bundles a Python FastAPI backend as a sidecar. The Tauri main process automatically launches the backend on a free port, waits for it to become healthy, exposes the URL to the UI, and tears it down on exit — so the user just double-clicks the app. See the interface contract in [`docs/API.md`](./docs/API.md).
+
+### Develop (one command)
 
 ```bash
 # 1. Setup (Python 3.11/3.12 recommended for opencv wheels)
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Run the API server
-python -m api.run            # http://127.0.0.1:8765
-```
-
-### Tauri Desktop Frontend Setup
-```bash
-# In another terminal window:
+# 2. Run the whole app — Tauri spawns the Python backend for you
 cd frontend
-npm run tauri dev            # Launches the desktop GUI
+npm install
+npm run tauri dev            # http://localhost:1420 (UI) + auto-launched backend
 ```
 
-Quick test:
+No need to run `python -m api.run` separately — the Rust shell starts it from the repo `.venv` and passes it a dynamically chosen port via `PERFECT_PIXEL_PORT`. The frontend shows an "Initializing engine…" screen until the backend reports healthy.
+
+For backend-only debugging you can still start it manually:
+
+```bash
+python -m api.run            # defaults to http://127.0.0.1:8765
+# or: PERFECT_PIXEL_PORT=9000 PERFECT_PIXEL_JOBS_DIR=/tmp/jobs python -m api.run
+```
+
+Environment variables consumed by `api/server.py`: `PERFECT_PIXEL_HOST`, `PERFECT_PIXEL_PORT`, `PERFECT_PIXEL_JOBS_DIR`.
+
+### Build a distributable app (no Python required on the host)
+
+```bash
+bash scripts/build_app.sh    # 1) PyInstaller sidecar  2) tauri build bundle
+```
+
+This builds the backend into a single `perfect-pixel-api` executable (via `scripts/build_sidecar.sh` / `.ps1`), places it under `frontend/src-tauri/binaries/` named with the Rust target triple, then bundles the full app (`Perfect Pixel.app` / `.exe`). Users get a double-click app with no Python/pip/npm/Rust needed.
+
+### Tauri shell commands
+
+| Command | Description |
+| :--- | :--- |
+| `backend_status` | `{ready, url, error}` — frontend polls this during boot |
+| `backend_url` | The backend base URL (e.g. `http://127.0.0.1:51234`) |
+| `open_logs_dir` | Open the directory containing `backend.log` |
+
+Quick test (manual backend):
 
 ```bash
 curl -F video=@test.mp4 -F output_scale=4 http://127.0.0.1:8765/api/jobs

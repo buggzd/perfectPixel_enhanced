@@ -35,9 +35,12 @@ from perfect_pixel.video import process_video  # noqa: E402
 # Configuration
 # ---------------------------------------------------------------------------
 
-HOST = "127.0.0.1"
-PORT = 8765
-JOBS_DIR = os.path.join(_REPO_ROOT, "jobs")
+HOST = os.getenv("PERFECT_PIXEL_HOST", "127.0.0.1")
+PORT = int(os.getenv("PERFECT_PIXEL_PORT", "8765"))
+JOBS_DIR = os.getenv(
+    "PERFECT_PIXEL_JOBS_DIR",
+    os.path.join(_REPO_ROOT, "jobs"),
+)
 os.makedirs(JOBS_DIR, exist_ok=True)
 
 VALID_SAMPLE_METHODS = {"center", "median", "majority"}

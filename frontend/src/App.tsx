@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from "react";
-import { 
-  checkHealth, 
-  createJob, 
-  getJobStatus, 
-  getJobFrames, 
-  getFrameUrl, 
-  deleteJob, 
-  JobOptions, 
-  JobStatusResponse, 
+import { invoke } from "@tauri-apps/api/core";
+import {
+  checkHealth,
+  createJob,
+  getJobStatus,
+  getJobFrames,
+  getFrameUrl,
+  deleteJob,
+  getBaseUrl,
+  setBaseUrl,
+  JobOptions,
+  JobStatusResponse,
   FrameInfo,
-  BASE_URL
 } from "./api";
 import { 
   Play, 
@@ -31,6 +33,12 @@ function App() {
   // Connection State
   const [isApiConnected, setIsApiConnected] = useState<boolean | null>(null);
   const [isCheckingConnection, setIsCheckingConnection] = useState(false);
+
+  // Boot state: the Tauri shell spawns the Python backend asynchronously.
+  // We wait for it to report ready (and learn its port) before talking to it.
+  const [bootState, setBootState] = useState<"loading" | "ready" | "error">(
+    "__TAURI_INTERNALS__" in window ? "loading" : "ready"
+  );
 
   // Configuration State
   const [sampleMethod, setSampleMethod] = useState<"majority" | "center" | "median">("majority");
@@ -67,7 +75,42 @@ function App() {
   const playIntervalRef = useRef<number | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
 
-  // 1. Health check on mount and poll
+  // 0. Boot: ask the Tauri shell for the backend URL once the sidecar is ready.
+  //    In a plain browser (no Tauri), skip and fall back to the default URL.
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) {
+      setBootState("ready");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        for (;;) {
+          const st = await invoke<{ ready: boolean; url: string; error: string | null }>(
+            "backend_status"
+          );
+          if (cancelled) return;
+          if (st.error) {
+            setBootState("error");
+            return;
+          }
+          if (st.ready && st.url) {
+            setBaseUrl(st.url);
+            setBootState("ready");
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 300));
+        }
+      } catch (e) {
+        if (!cancelled) setBootState("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 1. Health check — only once the backend URL is known; then poll every 3s.
   const verifyBackendHealth = async () => {
     setIsCheckingConnection(true);
     const healthy = await checkHealth();
@@ -76,13 +119,14 @@ function App() {
   };
 
   useEffect(() => {
+    if (bootState !== "ready") return;
     verifyBackendHealth();
     const interval = window.setInterval(async () => {
       const healthy = await checkHealth();
       setIsApiConnected(healthy);
     }, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [bootState]);
 
   // 2. Playback control timer
   useEffect(() => {
@@ -281,6 +325,69 @@ function App() {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
   };
+
+  // Boot screen: shown while the Tauri shell is starting the Python backend,
+  // or if it failed to come up.
+  if (bootState !== "ready") {
+    const isError = bootState === "error";
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100vh",
+          gap: 20,
+          background: "var(--bg, #0f1115)",
+          color: "var(--text, #e6e6e6)",
+          fontFamily: "inherit",
+        }}
+      >
+        <Sparkles size={36} />
+        <div style={{ fontSize: 18, fontWeight: 600 }}>
+          {isError ? "Engine failed to start" : "Initializing engine…"}
+        </div>
+        <div style={{ fontSize: 13, opacity: 0.6, maxWidth: 380, textAlign: "center" }}>
+          {isError
+            ? "The pixel-processing backend could not be launched. Check the logs for details."
+            : "Starting the Perfect Pixel backend. This only takes a moment."}
+        </div>
+        {!isError && (
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              border: "3px solid rgba(255,255,255,0.15)",
+              borderTopColor: "#fff",
+              borderRadius: "50%",
+              animation: "pp-spin 0.8s linear infinite",
+            }}
+          />
+        )}
+        {isError && (
+          <button
+            onClick={() => invoke("open_logs_dir").catch(() => {})}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.2)",
+              background: "transparent",
+              color: "inherit",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <AlertTriangle size={16} />
+            Open Logs Directory
+          </button>
+        )}
+        <style>{`@keyframes pp-spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
 
   // Render components
   return (
@@ -726,7 +833,7 @@ function App() {
                     </div>
 
                     <a 
-                      href={`${BASE_URL}/api/jobs/${currentJobId}/frames/${frames[currentFrameIndex]?.name}`}
+                      href={`${getBaseUrl()}/api/jobs/${currentJobId}/frames/${frames[currentFrameIndex]?.name}`}
                       download={frames[currentFrameIndex]?.name || "frame.png"}
                       target="_blank"
                       rel="noreferrer"

@@ -1,24 +1,45 @@
 # Perfect Pixel Video API — 接口文档
 
-> 面向前端（Tauri）工程师。本服务由 Tauri 以 sidecar 方式拉起，监听 `http://127.0.0.1:8765`。
+> 面向前端（Tauri）工程师。本服务由 Tauri 主程序作为 sidecar 自动拉起，监听 `http://127.0.0.1:<动态端口>`。
+> **端口不再固定**：Tauri 在启动时选一个空闲端口，通过环境变量 `PERFECT_PIXEL_PORT` 传给后端，并经 Tauri 命令 `backend_url` / `backend_status` 暴露给前端。前端永远不要硬编码端口。
 > 处理流程：上传视频 → 后端抽帧并逐帧做完美像素对齐（**首帧自动检测网格尺寸并锁定，后续帧复用**，保证帧间稳定不闪烁）→ 输出对齐后的 PNG 序列帧。
 
 ## 基础信息
 
 | 项 | 值 |
 | :--- | :--- |
-| Base URL | `http://127.0.0.1:8765` |
+| Base URL | 运行时由 Tauri 决定（默认 `http://127.0.0.1:8765`，仅用于脱离 Tauri 手动启动调试） |
 | 协议 | HTTP/1.1 |
 | 数据格式 | JSON（除文件上传为 multipart/form-data、帧下载为 image/png） |
 | CORS | 允许所有源（Tauri 的 `tauri://localhost` / `http://localhost:*` 均可直连） |
 
 ## 启动后端
 
+### 常规（一体化，推荐）
+
+```bash
+cd frontend
+npm run tauri dev     # Tauri 自动起 Python 后端（用仓库 .venv），前端启动后即可用
+```
+
+无需手动 `python -m api.run`。Tauri 会选端口、传环境变量、等 `/api/health` 就绪、关闭时回收进程。
+
+### 脱离 Tauri 手动启动（调试用）
+
 ```bash
 python3.12 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-python -m api.run            # 监听 127.0.0.1:8765
+python -m api.run            # 监听 127.0.0.1:8765（默认端口）
+# 或自定义：PERFECT_PIXEL_PORT=9000 PERFECT_PIXEL_JOBS_DIR=/tmp/jobs python -m api.run
 ```
+
+### 环境变量
+
+| 变量 | 默认 | 说明 |
+| :--- | :--- | :--- |
+| `PERFECT_PIXEL_HOST` | `127.0.0.1` | 监听地址 |
+| `PERFECT_PIXEL_PORT` | `8765` | 监听端口（Tauri 启动时设为动态空闲端口） |
+| `PERFECT_PIXEL_JOBS_DIR` | `<repo>/jobs` | 任务工作目录（dev）；打包后为 `app_local_data_dir/jobs` |
 
 ---
 
@@ -178,12 +199,13 @@ DELETE 可在任意状态下调用（清理）
 
 ## Tauri 集成要点
 
-1. **Sidecar 启动**：在 `tauri.conf.json` 配置 sidecar 或在 Rust 侧用 `Command::new` 拉起 `python -m api.run`（或打包后的可执行）。启动后轮询 `GET /api/health` 直到 200 再放行前端交互。
-2. **端口**：固定 `127.0.0.1:8765`。如需避免冲突可在启动时通过环境变量扩展（当前硬编码）。
-3. **上传**：`POST /api/jobs` 用 multipart 上传视频文件；Tauri 前端用 `FormData` + `fetch` 即可。
-4. **进度**：创建后保存 `job_id`，前端 `setInterval` 每 ~400ms 调 `GET /api/jobs/{id}`，更新进度条；`done` 后拉取帧列表渲染。
-5. **帧预览/播放**：用 `/frames/{name}` 作为 `<img>`/`<video>` 帧序列源；如需逐帧播放，前端按 `index` 顺序定时切换。
-6. **清理**：用户关闭/取消时调 `DELETE /api/jobs/{id}`，避免 `jobs/` 目录堆积（服务启动时也会清空上次残留）。
+1. **Sidecar 启动（已实现）**：Tauri Rust 层（`frontend/src-tauri/src/lib.rs`）在 `setup` 阶段选空闲端口、准备 jobs/logs 目录、spawn 后端（dev 用 `.venv` 的 `python -m api.run`，release 用 PyInstaller 打包的 `perfect-pixel-api` 二进制），stdout/stderr 重定向到 `logs/backend.log`。后台线程轮询 `/api/health`，就绪后置 `ready`。
+2. **端口与 URL 发现**：端口动态，前端启动时调用 Tauri 命令 `backend_status`（返回 `{ready, url, error}`）轮询直到 `ready`，再用 `url` 调 `setBaseUrl`；之后所有请求走该 URL。命令另有 `backend_url`（直接取 URL）、`open_logs_dir`（打开日志目录）。
+3. **生命周期**：App 退出时（`RunEvent::Exit`）Rust 杀掉后端子进程；单实例插件防止重复启动抢端口。
+4. **上传**：`POST /api/jobs` 用 multipart 上传视频文件；Tauri 前端用 `FormData` + `fetch` 即可。
+5. **进度**：创建后保存 `job_id`，前端 `setInterval` 每 ~400ms 调 `GET /api/jobs/{id}`，更新进度条；`done` 后拉取帧列表渲染。
+6. **帧预览/播放**：用 `/frames/{name}` 作为 `<img>` 帧序列源；按 `index` 顺序定时切换。
+7. **清理**：用户关闭/取消时调 `DELETE /api/jobs/{id}`，避免 `jobs/` 目录堆积（服务启动时也会清空上次残留）。
 
 ---
 
