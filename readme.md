@@ -88,6 +88,30 @@ The grid size is automatically detected, and the image is refined.
 
 Try integrate it into your own projects!
 
+## Video → Perfect Pixel (HTTP API)
+
+This fork extends Perfect Pixel to **video**: extract frames → refine each frame to a perfectly aligned pixel grid → output a PNG frame sequence. The pixel grid size is **auto-detected on the first frame and locked for all subsequent frames** to keep the sequence temporally stable (no per-frame flicker).
+
+A FastAPI backend exposes the pipeline over HTTP, designed to be driven by a Tauri front-end (or any HTTP client). The front-end is not included in this stage — see the interface contract in [`docs/API.md`](./docs/API.md).
+
+```bash
+# 1. Setup (Python 3.11/3.12 recommended for opencv wheels)
+python3.12 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Run the API server (sidecar for Tauri)
+python -m api.run            # http://127.0.0.1:8765
+```
+
+Quick test:
+
+```bash
+curl -F video=@test.mp4 -F output_scale=4 http://127.0.0.1:8765/api/jobs
+curl http://127.0.0.1:8765/api/jobs/<job_id>
+```
+
+See [`docs/API.md`](./docs/API.md) for the full endpoint contract, options, and Tauri integration notes.
+
 ## API Reference
 | Args | Description | 
 | :--- | :--- |

@@ -8,6 +8,7 @@ venv/
 env/
 
 output/
+jobs/
 
 *.log
 
