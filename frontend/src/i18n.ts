@@ -36,6 +36,8 @@ export const translations = {
     denoise: "Denoise Preprocessing",
     denoiseStrength: "Denoise Strength",
     tauriSidecarIntegration: "Tauri Sidecar Integration",
+    featureSwitches: "Feature Toggles",
+    advancedSettings: "Advanced Parameters",
 
     // Main Panel Banner & General
     fastapiOffline: "FastAPI backend is offline.",
@@ -127,6 +129,8 @@ export const translations = {
     denoise: "去噪预处理",
     denoiseStrength: "去噪强度",
     tauriSidecarIntegration: "Tauri 侧车集成",
+    featureSwitches: "功能开关",
+    advancedSettings: "参数微调",
 
     // Main Panel Banner & General
     fastapiOffline: "FastAPI 后端离线。",

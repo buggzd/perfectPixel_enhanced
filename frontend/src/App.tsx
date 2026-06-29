@@ -30,6 +30,102 @@ import {
 import "./App.css";
 import { translations, Language } from "./i18n";
 
+interface Option<T> {
+  value: T;
+  label: string;
+}
+
+interface CustomSelectProps<T> {
+  value: T;
+  onChange: (value: T) => void;
+  options: Option<T>[];
+  disabled?: boolean;
+  className?: string;
+}
+
+function CustomSelect<T extends string | number>({
+  value,
+  onChange,
+  options,
+  disabled,
+  className = "",
+}: CustomSelectProps<T>) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const selectedOption = options.find((opt) => opt.value === value);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`custom-select ${className} ${isOpen ? "is-open" : ""} ${
+        disabled ? "is-disabled" : ""
+      }`}
+    >
+      <button
+        type="button"
+        className="custom-select-trigger"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+      >
+        <span className="custom-select-value">
+          {selectedOption ? selectedOption.label : ""}
+        </span>
+        <span className="custom-select-icon">
+          <svg
+            width="10"
+            height="6"
+            viewBox="0 0 10 6"
+            fill="none"
+            style={{
+              transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform var(--transition-fast)",
+            }}
+          >
+            <path
+              d="M1 1L5 5L9 1"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      </button>
+      {isOpen && (
+        <ul className="custom-select-options">
+          {options.map((opt) => (
+            <li
+              key={opt.value}
+              className={`custom-select-option ${
+                opt.value === value ? "is-selected" : ""
+              }`}
+              onClick={() => {
+                onChange(opt.value);
+                setIsOpen(false);
+              }}
+            >
+              {opt.label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function App() {
   // Language State
   const [lang, setLang] = useState<Language>(() => {
@@ -446,24 +542,15 @@ function App() {
               <span className="logo-version">v1.1</span>
             </div>
             {/* Language Switcher */}
-            <select
+            <CustomSelect
               value={lang}
-              onChange={(e) => handleLangChange(e.target.value as Language)}
-              className="lang-select"
-              style={{
-                width: "auto",
-                padding: "2px 8px",
-                fontSize: "12px",
-                borderRadius: "4px",
-                background: "var(--bg-tertiary)",
-                border: "1px solid var(--border-color)",
-                color: "var(--text-secondary)",
-                cursor: "pointer",
-              }}
-            >
-              <option value="zh">中文</option>
-              <option value="en">EN</option>
-            </select>
+              onChange={(val) => handleLangChange(val as Language)}
+              options={[
+                { value: "zh", label: "中文" },
+                { value: "en", label: "EN" },
+              ]}
+              className="lang-select-custom"
+            />
           </div>
           <div className="connection-status">
             <div className={`status-dot ${isApiConnected ? "connected" : "disconnected"}`} />
@@ -486,15 +573,16 @@ function App() {
               {t.sampleMethod}
               <span className="label-hint">sample_method</span>
             </label>
-            <select 
-              value={sampleMethod} 
-              onChange={(e) => setSampleMethod(e.target.value as any)}
+            <CustomSelect
+              value={sampleMethod}
+              onChange={(val) => setSampleMethod(val as any)}
+              options={[
+                { value: "majority", label: t.majorityColor },
+                { value: "center", label: t.centerSampling },
+                { value: "median", label: t.medianColor },
+              ]}
               disabled={isProcessing}
-            >
-              <option value="majority">{t.majorityColor}</option>
-              <option value="center">{t.centerSampling}</option>
-              <option value="median">{t.medianColor}</option>
-            </select>
+            />
           </div>
 
           <div className="form-group">
@@ -539,17 +627,23 @@ function App() {
             </div>
           </div>
 
-          <div className="form-group toggle-group" onClick={() => !isProcessing && setFixSquare(!fixSquare)}>
-            <label style={{ cursor: "pointer" }}>{t.forceSquareAlignment}</label>
-            <label className="toggle-switch">
-              <input 
-                type="checkbox" 
-                checked={fixSquare} 
-                onChange={() => {}} 
-                disabled={isProcessing} 
-              />
-              <span className="toggle-slider"></span>
+          <div className="form-group">
+            <label>
+              {t.voteFrames}
+              <span className="label-hint">vote_frames</span>
             </label>
+            <CustomSelect
+              value={voteFrames}
+              onChange={(val) => setVoteFrames(val)}
+              options={[
+                { value: 0, label: "0 (No Voting)" },
+                { value: 1, label: "1 (Single Frame)" },
+                { value: 3, label: "3 (3 Frames)" },
+                { value: 5, label: "5 (5 Frames)" },
+                { value: 10, label: "10 (10 Frames)" },
+              ]}
+              disabled={isProcessing}
+            />
           </div>
 
           <div className="settings-section-title">{t.videoSizing}</div>
@@ -609,139 +703,144 @@ function App() {
             />
           </div>
 
-          <div className="settings-section-title">{t.temporalStability}</div>
+          <div className="settings-section-title">{t.featureSwitches}</div>
 
-          <div className="form-group toggle-group" onClick={() => !isProcessing && setAdaptiveGrid(!adaptiveGrid)}>
-            <label style={{ cursor: "pointer" }}>{t.adaptiveGrid}</label>
+          <div className="form-group toggle-group">
+            <label htmlFor="toggle-fix-square" style={{ cursor: "pointer" }}>{t.forceSquareAlignment}</label>
             <label className="toggle-switch">
               <input 
+                id="toggle-fix-square"
+                type="checkbox" 
+                checked={fixSquare} 
+                onChange={(e) => !isProcessing && setFixSquare(e.target.checked)} 
+                disabled={isProcessing} 
+              />
+              <span className="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div className="form-group toggle-group">
+            <label htmlFor="toggle-adaptive-grid" style={{ cursor: "pointer" }}>{t.adaptiveGrid}</label>
+            <label className="toggle-switch">
+              <input 
+                id="toggle-adaptive-grid"
                 type="checkbox" 
                 checked={adaptiveGrid} 
-                onChange={() => {}} 
+                onChange={(e) => !isProcessing && setAdaptiveGrid(e.target.checked)} 
                 disabled={isProcessing} 
               />
               <span className="toggle-slider"></span>
             </label>
           </div>
 
-          {adaptiveGrid && (
-            <div className="form-group">
-              <label>
-                {t.gridBlend}: <span className="slider-val">{gridBlend.toFixed(2)}</span>
-              </label>
-              <div className="slider-container">
-                <input 
-                  type="range" 
-                  min="0.0" 
-                  max="1.0" 
-                  step="0.05" 
-                  value={gridBlend} 
-                  onChange={(e) => setGridBlend(parseFloat(e.target.value))}
-                  disabled={isProcessing}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="form-group">
-            <label>
-              {t.voteFrames}
-              <span className="label-hint">vote_frames</span>
-            </label>
-            <select 
-              value={voteFrames} 
-              onChange={(e) => setVoteFrames(parseInt(e.target.value, 10))}
-              disabled={isProcessing}
-            >
-              <option value="0">0 (No Voting)</option>
-              <option value="1">1 (Single Frame)</option>
-              <option value="3">3 (3 Frames)</option>
-              <option value="5">5 (5 Frames)</option>
-              <option value="10">10 (10 Frames)</option>
-            </select>
-          </div>
-
-          <div className="form-group toggle-group" onClick={() => !isProcessing && setTemporalSmoothing(!temporalSmoothing)}>
-            <label style={{ cursor: "pointer" }}>{t.temporalSmoothing}</label>
+          <div className="form-group toggle-group">
+            <label htmlFor="toggle-temporal-smoothing" style={{ cursor: "pointer" }}>{t.temporalSmoothing}</label>
             <label className="toggle-switch">
               <input 
+                id="toggle-temporal-smoothing"
                 type="checkbox" 
                 checked={temporalSmoothing} 
-                onChange={() => {}} 
+                onChange={(e) => !isProcessing && setTemporalSmoothing(e.target.checked)} 
                 disabled={isProcessing} 
               />
               <span className="toggle-slider"></span>
             </label>
           </div>
 
-          {temporalSmoothing && (
-            <>
-              <div className="form-group">
-                <label>
-                  {t.temporalAlpha}: <span className="slider-val">{temporalAlpha.toFixed(2)}</span>
-                </label>
-                <div className="slider-container">
-                  <input 
-                    type="range" 
-                    min="0.05" 
-                    max="1.0" 
-                    step="0.05" 
-                    value={temporalAlpha} 
-                    onChange={(e) => setTemporalAlpha(parseFloat(e.target.value))}
-                    disabled={isProcessing}
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>
-                  {t.sceneChangeThreshold}: <span className="slider-val">{sceneChangeThreshold.toFixed(0)}</span>
-                </label>
-                <div className="slider-container">
-                  <input 
-                    type="range" 
-                    min="5" 
-                    max="100" 
-                    step="5" 
-                    value={sceneChangeThreshold} 
-                    onChange={(e) => setSceneChangeThreshold(parseFloat(e.target.value))}
-                    disabled={isProcessing}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
-          <div className="form-group toggle-group" onClick={() => !isProcessing && setDenoise(!denoise)}>
-            <label style={{ cursor: "pointer" }}>{t.denoise}</label>
+          <div className="form-group toggle-group">
+            <label htmlFor="toggle-denoise" style={{ cursor: "pointer" }}>{t.denoise}</label>
             <label className="toggle-switch">
               <input 
+                id="toggle-denoise"
                 type="checkbox" 
                 checked={denoise} 
-                onChange={() => {}} 
+                onChange={(e) => !isProcessing && setDenoise(e.target.checked)} 
                 disabled={isProcessing} 
               />
               <span className="toggle-slider"></span>
             </label>
           </div>
 
-          {denoise && (
-            <div className="form-group">
-              <label>
-                {t.denoiseStrength}: <span className="slider-val">{denoiseStrength.toFixed(1)}</span>
-              </label>
-              <div className="slider-container">
-                <input 
-                  type="range" 
-                  min="1.0" 
-                  max="15.0" 
-                  step="0.5" 
-                  value={denoiseStrength} 
-                  onChange={(e) => setDenoiseStrength(parseFloat(e.target.value))}
-                  disabled={isProcessing}
-                />
-              </div>
-            </div>
+          {(adaptiveGrid || temporalSmoothing || denoise) && (
+            <>
+              <div className="settings-section-title">{t.advancedSettings}</div>
+
+              {adaptiveGrid && (
+                <div className="form-group">
+                  <label>
+                    {t.gridBlend}: <span className="slider-val">{gridBlend.toFixed(2)}</span>
+                  </label>
+                  <div className="slider-container">
+                    <input 
+                      type="range" 
+                      min="0.0" 
+                      max="1.0" 
+                      step="0.05" 
+                      value={gridBlend} 
+                      onChange={(e) => setGridBlend(parseFloat(e.target.value))}
+                      disabled={isProcessing}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {temporalSmoothing && (
+                <>
+                  <div className="form-group">
+                    <label>
+                      {t.temporalAlpha}: <span className="slider-val">{temporalAlpha.toFixed(2)}</span>
+                    </label>
+                    <div className="slider-container">
+                      <input 
+                        type="range" 
+                        min="0.05" 
+                        max="1.0" 
+                        step="0.05" 
+                        value={temporalAlpha} 
+                        onChange={(e) => setTemporalAlpha(parseFloat(e.target.value))}
+                        disabled={isProcessing}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>
+                      {t.sceneChangeThreshold}: <span className="slider-val">{sceneChangeThreshold.toFixed(0)}</span>
+                    </label>
+                    <div className="slider-container">
+                      <input 
+                        type="range" 
+                        min="5" 
+                        max="100" 
+                        step="5" 
+                        value={sceneChangeThreshold} 
+                        onChange={(e) => setSceneChangeThreshold(parseFloat(e.target.value))}
+                        disabled={isProcessing}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {denoise && (
+                <div className="form-group">
+                  <label>
+                    {t.denoiseStrength}: <span className="slider-val">{denoiseStrength.toFixed(1)}</span>
+                  </label>
+                  <div className="slider-container">
+                    <input 
+                      type="range" 
+                      min="1.0" 
+                      max="15.0" 
+                      step="0.5" 
+                      value={denoiseStrength} 
+                      onChange={(e) => setDenoiseStrength(parseFloat(e.target.value))}
+                      disabled={isProcessing}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Action Button inside Sidebar */}
@@ -1007,18 +1106,19 @@ function App() {
 
                           <div className="playback-speed">
                             <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{t.fps}</span>
-                            <select 
-                              className="speed-select" 
+                            <CustomSelect
                               value={playbackFps}
-                              onChange={(e) => setPlaybackFps(parseInt(e.target.value, 10))}
-                            >
-                              <option value="5">5 FPS</option>
-                              <option value="10">10 FPS</option>
-                              <option value="15">15 FPS</option>
-                              <option value="24">24 FPS</option>
-                              <option value="30">30 FPS</option>
-                              <option value="60">60 FPS</option>
-                            </select>
+                              onChange={(val) => setPlaybackFps(val)}
+                              options={[
+                                { value: 5, label: "5 FPS" },
+                                { value: 10, label: "10 FPS" },
+                                { value: 15, label: "15 FPS" },
+                                { value: 24, label: "24 FPS" },
+                                { value: 30, label: "30 FPS" },
+                                { value: 60, label: "60 FPS" },
+                              ]}
+                              className="speed-select-custom"
+                            />
                           </div>
                         </div>
                       </div>
