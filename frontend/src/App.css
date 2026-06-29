@@ -88,7 +88,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
   z-index: 10;
 }
 
@@ -172,6 +172,14 @@ body {
   flex-direction: column;
   gap: 20px;
   flex: 1;
+  overflow-y: auto;
+}
+
+.sidebar-actions {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color);
+  background: #000000;
+  flex-shrink: 0;
 }
 
 .settings-section-title {
@@ -1141,7 +1149,7 @@ input:checked + .toggle-slider:before {
   border: 1px solid var(--border-color);
   box-shadow: var(--glass-shadow);
   border-radius: 8px;
-  padding: 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1151,29 +1159,44 @@ input:checked + .toggle-slider:before {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
 }
 
 .thumbnails-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
-  gap: 10px;
-  max-height: 180px;
-  overflow-y: auto;
-  padding-right: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  height: 580px; /* Increased to fill sidebar height */
+  overflow-y: scroll;
+  padding: 240px 0; /* Centered snap padding: 290px minus 50px */
+  scroll-behavior: smooth;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none; /* Hide scrollbar in Firefox */
+}
+
+.thumbnails-grid::-webkit-scrollbar {
+  display: none; /* Hide scrollbar in Chrome/Safari/Webkit */
 }
 
 .thumbnail-card {
-  aspect-ratio: 1;
+  width: 180px; /* Fits the 280px sidebar (minus padding) beautifully */
+  height: 101px; /* 16:9 ratio to match preview viewport */
+  flex-shrink: 0;
   background: #121212;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: 6px;
   overflow: hidden;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-fast);
+  transition: all var(--transition-normal);
   position: relative;
+  scroll-snap-align: center;
+  opacity: 0.4; /* Dim inactive frames for cover-flow contrast */
+  transform: scale(0.92);
 }
 
 .thumbnail-card img {
@@ -1185,12 +1208,15 @@ input:checked + .toggle-slider:before {
 
 .thumbnail-card:hover {
   border-color: var(--text-secondary);
-  transform: scale(1.04);
+  opacity: 0.7;
+  transform: scale(0.96);
 }
 
 .thumbnail-card.active {
   border-color: var(--accent-green);
-  box-shadow: 0 0 10px rgba(30, 215, 96, 0.25);
+  box-shadow: 0 0 15px rgba(30, 215, 96, 0.35);
+  opacity: 1; /* Highlight active frame */
+  transform: scale(1.08); /* Pop out active frame */
 }
 
 .thumb-idx {
@@ -1276,4 +1302,53 @@ input:checked + .toggle-slider:before {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* Horizontal Info Specifications Panel (under video player) */
+.player-main .info-panel-card {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  padding: 16px 24px;
+  border-radius: 8px;
+  margin-top: 10px;
+}
+
+.player-main .info-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 36px;
+}
+
+.player-main .info-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.player-main .info-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.8px;
+}
+
+.player-main .info-value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.player-main .export-btn {
+  width: auto;
+  min-width: 160px;
+  padding: 10px 24px;
 }

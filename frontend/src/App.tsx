@@ -192,6 +192,12 @@ function App() {
   const playIntervalRef = useRef<number | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
 
+  // Scroll and thumbnail sync references
+  const isProgrammaticScrollRef = useRef<boolean>(false);
+  const isUserScrollingRef = useRef<boolean>(false);
+  const thumbnailsContainerRef = useRef<HTMLDivElement>(null);
+  const scrollTimeoutRef = useRef<number | null>(null);
+
   // Helper state to check if a job is actively processing
   const isProcessing = isSubmitting || !!(currentJobId && jobStatus && (jobStatus.status === "running" || jobStatus.status === "queued"));
 
@@ -336,6 +342,82 @@ function App() {
       }
     };
   }, [currentJobId]);
+
+  // Scroll handler for manual wheel/drag scrolling
+  const handleThumbnailsScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    // If the scroll is triggered programmatically by playback or scrubbing, ignore it
+    if (isProgrammaticScrollRef.current) return;
+
+    const container = e.currentTarget;
+    const scrollTop = container.scrollTop;
+    const containerHeight = container.clientHeight;
+    
+    // Calculate which child is closest to the vertical center of the container
+    const children = Array.from(container.children) as HTMLElement[];
+    if (children.length === 0) return;
+
+    const containerCenter = scrollTop + containerHeight / 2;
+    
+    let closestIndex = 0;
+    let minDistance = Infinity;
+
+    children.forEach((child, index) => {
+      const childCenter = child.offsetTop + child.offsetHeight / 2;
+      const distance = Math.abs(containerCenter - childCenter);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = index;
+      }
+    });
+
+    if (closestIndex !== currentFrameIndex) {
+      isUserScrollingRef.current = true;
+      setCurrentFrameIndex(closestIndex);
+      
+      // Reset user scrolling flag after scroll stops
+      if (scrollTimeoutRef.current) {
+        window.clearTimeout(scrollTimeoutRef.current);
+      }
+      scrollTimeoutRef.current = window.setTimeout(() => {
+        isUserScrollingRef.current = false;
+      }, 150);
+    }
+  };
+
+  // Programmatic scroll effect to center active frame
+  useEffect(() => {
+    if (isUserScrollingRef.current) {
+      // If the change came from the user scrolling the thumbnails list,
+      // do not scroll programmatically (the item is already centered by snap)
+      return;
+    }
+
+    const container = thumbnailsContainerRef.current;
+    if (container && frames.length > 0) {
+      const children = Array.from(container.children) as HTMLElement[];
+      const activeChild = children[currentFrameIndex];
+      
+      if (activeChild) {
+        isProgrammaticScrollRef.current = true;
+        
+        const containerHeight = container.clientHeight;
+        const targetTop = activeChild.offsetTop - (containerHeight / 2) + (activeChild.offsetHeight / 2);
+        
+        container.scrollTo({
+          top: targetTop,
+          behavior: "smooth"
+        });
+
+        // Set programmatic scroll flag to false after scroll completes
+        if (scrollTimeoutRef.current) {
+          window.clearTimeout(scrollTimeoutRef.current);
+        }
+        scrollTimeoutRef.current = window.setTimeout(() => {
+          isProgrammaticScrollRef.current = false;
+        }, 300); // 300ms matches scroll animation length
+      }
+    }
+  }, [currentFrameIndex, frames]);
 
   // Drag and drop handlers
   const handleDrag = (e: React.DragEvent) => {
@@ -843,13 +925,15 @@ function App() {
             </>
           )}
 
-          {/* Action Button inside Sidebar */}
-          {file && (
+        </div>
+
+        {/* Action Button inside Sidebar (Fixed at bottom) */}
+        {file && (
+          <div className="sidebar-actions">
             <button 
               className="submit-btn" 
               onClick={handleStartProcessing} 
               disabled={isProcessing || !isApiConnected}
-              style={{ marginTop: "12px" }}
             >
               {isProcessing ? (
                 <>
@@ -868,8 +952,8 @@ function App() {
                 </>
               )}
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="sidebar-footer">
           <div className="version-note">{t.tauriSidecarIntegration}</div>
@@ -1122,6 +1206,45 @@ function App() {
                           </div>
                         </div>
                       </div>
+
+                      {/* Info Specifications Panel (Horizontal block under video controls) */}
+                      <div className="info-panel-card">
+                        <div className="info-grid">
+                          <div className="info-row">
+                            <span className="info-label">{t.gridLocked}</span>
+                            <span className="info-value">
+                              {jobStatus.grid_size 
+                                ? `${jobStatus.grid_size.w} × ${jobStatus.grid_size.h}` 
+                                : t.auto}
+                            </span>
+                          </div>
+                          <div className="info-row">
+                            <span className="info-label">{t.totalFrames}</span>
+                            <span className="info-value">{frames.length}</span>
+                          </div>
+                          <div className="info-row">
+                            <span className="info-label">{t.upscaleFactor}</span>
+                            <span className="info-value">{outputScale}x</span>
+                          </div>
+                          <div className="info-row">
+                            <span className="info-label">{t.sampleRate}</span>
+                            <span className="info-value">{t.sampleRateValue(everyNFrames)}</span>
+                          </div>
+                        </div>
+
+                        <a 
+                          href={`${getBaseUrl()}/api/jobs/${currentJobId}/frames/${frames[currentFrameIndex]?.name}`}
+                          download={frames[currentFrameIndex]?.name || "frame.png"}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ textDecoration: "none", color: "inherit" }}
+                        >
+                          <button className="export-btn">
+                            <Download size={16} />
+                            {t.downloadFrame}
+                          </button>
+                        </a>
+                      </div>
                     </>
                   ) : (
                     <div style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
@@ -1132,67 +1255,32 @@ function App() {
 
                 {/* Info and download actions sidebar */}
                 <div className="player-sidebar">
-                  <div className="info-panel-card">
-                    <span className="info-title">{t.processingSpecs}</span>
-                    <div className="info-grid">
-                      <div className="info-row">
-                        <span className="info-label">{t.gridLocked}</span>
-                        <span className="info-value">
-                          {jobStatus.grid_size 
-                            ? `${jobStatus.grid_size.w} × ${jobStatus.grid_size.h}` 
-                            : t.auto}
-                        </span>
-                      </div>
-                      <div className="info-row">
-                        <span className="info-label">{t.totalFrames}</span>
-                        <span className="info-value">{frames.length}</span>
-                      </div>
-                      <div className="info-row">
-                        <span className="info-label">{t.upscaleFactor}</span>
-                        <span className="info-value">{outputScale}x</span>
-                      </div>
-                      <div className="info-row">
-                        <span className="info-label">{t.sampleRate}</span>
-                        <span className="info-value">{t.sampleRateValue(everyNFrames)}</span>
-                      </div>
+                  {/* Frame Sequence Thumbnails Column */}
+                  <div className="thumbnails-container">
+                    <div className="thumbnails-header">
+                      <span className="info-title">{t.frameListPng}</span>
+                      <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{t.clickToJump}</span>
                     </div>
-
-                    <a 
-                      href={`${getBaseUrl()}/api/jobs/${currentJobId}/frames/${frames[currentFrameIndex]?.name}`}
-                      download={frames[currentFrameIndex]?.name || "frame.png"}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ textDecoration: "none", color: "inherit" }}
-                    >
-                      <button className="export-btn" style={{ width: "100%" }}>
-                        <Download size={16} />
-                        {t.downloadFrame}
-                      </button>
-                    </a>
-                  </div>
-                </div>
-              </div>
-
-              {/* Frame Sequence Thumbnails Grid */}
-              <div className="thumbnails-container">
-                <div className="thumbnails-header">
-                  <span className="info-title">{t.frameListPng}</span>
-                  <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{t.clickToJump}</span>
-                </div>
-                <div className="thumbnails-grid">
-                  {frames.map((frame, index) => (
                     <div 
-                      key={frame.name}
-                      className={`thumbnail-card ${index === currentFrameIndex ? "active" : ""}`}
-                      onClick={() => {
-                        setIsPlaying(false);
-                        setCurrentFrameIndex(index);
-                      }}
+                      ref={thumbnailsContainerRef}
+                      className="thumbnails-grid"
+                      onScroll={handleThumbnailsScroll}
                     >
-                      <img src={getFrameUrl(currentJobId, frame.name)} alt="" loading="lazy" />
-                      <span className="thumb-idx">#{frame.index}</span>
+                      {frames.map((frame, index) => (
+                        <div 
+                          key={frame.name}
+                          className={`thumbnail-card ${index === currentFrameIndex ? "active" : ""}`}
+                          onClick={() => {
+                            setIsPlaying(false);
+                            setCurrentFrameIndex(index);
+                          }}
+                        >
+                          <img src={getFrameUrl(currentJobId, frame.name)} alt="" loading="lazy" />
+                          <span className="thumb-idx">#{frame.index}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
                 </div>
               </div>
             </div>
