@@ -1,33 +1,45 @@
-# Perfect Pixel
+# Perfect Pixel Enhanced
 
-> **Auto detect and Get perfect Pixel art**
+> **Auto detect, refine, and get perfect pixel art from single frames and video sequences.**
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](#)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](#)
 
-<img src="https://github.com/theamusing/perfectPixel/raw/main/assets/process.png" width="100%" />
+---
 
-Standard scaling often fails to sample AI-generated pixel art due to inconsistent sizes and non-square grids. 
+## 📌 Project Origin & Fork Information
+This project is an enhanced **fork** of the original [theamusing/perfectPixel](https://github.com/theamusing/perfectPixel) repository.
 
-This tool automatically detects the optimal grid and delivers perfectly aligned, pixel-perfect results.
+While the original tool was designed for refining single static pixel-style images, this enhanced fork extends the core grid refinement algorithm to support **video processing**, **temporal stability tuning**, and provides a **standalone cross-platform desktop application**.
 
-## Features
-- Automatically detect grid size from pixel style images.
-- Refines AI generated pixel style image to perfectly aligned grids.
-- Easy to integrate into your own workflow.
+---
 
-[Try the Web Demo](https://theamusing.github.io/perfectPixel_webdemo/)
+## ✨ Key Enhancements (This Fork)
 
-## Installation
+### 1. Video Sequence & Temporal Stability Processing
+- **Video to Pixel Art**: Extract, process, and refine MP4/MOV/AVI video frames into a pixel-perfect PNG sequence.
+- **Auto-Grid Locking**: Detects the optimal pixel grid size on initial frames and locks it for the entire sequence to eliminate per-frame spatial jitter.
+- **Vote Frames (`vote_frames`)**: Uses a multi-frame voting mechanism to establish the most stable coordinate grids.
+- **Adaptive Grid & Temporal Smoothing**: Blends refined coordinates over time using exponential moving average (EMA) smoothing to ensure liquid-smooth movements without grid popping.
+- **Denoising Preprocessing**: Filters compression artifacts on frames before grid estimation.
 
-**Perfect Pixel** provides two implementations of the same core algorithm. The Lighweight Backend is designed in case you can't or don't want to use cv2. You can choose the one that best fits your environment:
+### 2. Standalone Desktop Client (Tauri + React + FastAPI)
+- **Zero-Dependency Bundle**: Bundles a Python FastAPI processing server as a compiled sidecar executable. Users do not need Python, Node, or Rust installed to run the final app.
+- **Spotify-Inspired Immersive Dark UI**: A sleek, charcoal-black player interface with interactive settings, a volume-slider style range scrubber, and custom dropdown selects.
+- **Vertical Tactile Timeline**: A vertical snap-scrolling album timeline on the right. Scroll manually using mouse wheel (updating preview frames in real-time with kinetic snapping) or watch it automatically center active frames during playback.
 
-| Feature | OpenCV Backend ([`perfect_pixel.py`](./src/perfect_pixel/perfect_pixel.py)) | Lightweight Backend ([`perfect_pixel_no_cv2.py`](./src/perfect_pixel/perfect_pixel_noCV2.py)) |
-| :--- | :--- | :--- |
-| **Dependencies** | `opencv-python`, `numpy` | `numpy` |
+---
 
-You can install Perfect Pixel via `pip`. It is recommended to install the OpenCV version for better performance.
+## 📦 Installation
 
+Perfect Pixel provides implementations with or without OpenCV. You can choose the one that fits your environment:
+
+| Backend | File | Dependencies | Purpose |
+| :--- | :--- | :--- | :--- |
+| **OpenCV Backend** | [`perfect_pixel.py`](./src/perfect_pixel/perfect_pixel.py) | `opencv-python`, `numpy` | Default high-performance backend |
+| **Lightweight Backend** | [`perfect_pixel_no_cv2.py`](./src/perfect_pixel/perfect_pixel_noCV2.py) | `numpy` | Lightweight backup (no cv2 required) |
+
+Install the library via `pip`:
 ```bash
 # Recommended: Fast version with OpenCV support
 pip install perfect-pixel[opencv]
@@ -36,35 +48,44 @@ pip install perfect-pixel[opencv]
 pip install perfect-pixel
 ```
 
-## ComfyUI
+---
 
-A ComfyUI custom node is available for integrating Perfect Pixel into ComfyUI workflows.
+## 🖥️ Desktop App Development
 
-- No changes to the core Perfect Pixel algorithm
-- Provides a ComfyUI-friendly interface for pixel art refinement
+### 1. Prerequisite Setup (Python 3.11/3.12 recommended)
+```bash
+# Set up virtual environment and install backend requirements
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
 
+### 2. Development Run
+You can run the full desktop client with one command:
+```bash
+cd frontend
+npm install
+npm run tauri dev # Launches React frontend and auto-spawns FastAPI backend sidecar
+```
+The Tauri shell handles the lifecycle of the Python server (logging to `backend.log` and passing dynamic port bindings).
+
+### 3. Build Distributable Package
+To pack the app into a standalone double-clickable installer (`.dmg`/`.app` on macOS, `.exe` on Windows):
+```bash
+bash scripts/build_app.sh
+```
+This runs the PyInstaller sidecar builder first, copying target binaries under `frontend/src-tauri/binaries/`, and compiles the Tauri bundle.
+
+---
+
+## 🔌 ComfyUI Custom Node
+A custom node integration is available to run Perfect Pixel directly inside ComfyUI:
 - [`Learn how to use Perfect Pixel as a ComfyUI node`](integrations/comfyui/README.md)
 
-## Usage 
+---
 
-### Step 1: Get pixel style image
-First you need extra tools to get a pixel styled image. **The recommanded size is between 512 to 1024.**
+## 🛠️ API & CLI Usage
 
-You can use Stable Diffusion with any Pixel Style Lora, or you can use ChatGPT or Gemini to generate one.
-
-
-For example, I used ChatGPT to transfer an image into pixel style.
-
-```
-prompt: Convert the input image into a TRUE perler bead pixel pattern designed for physical bead crafting, not digital illustration. Canvas size must be exactly 32×32 pixels OR 16×16 pixels, where each pixel represents exactly one perler bead. Use extremely large, chunky pixels with very few active pixels overall. Simplicity is critical. Only keep the main subject. Remove the entire background. For human characters, make sure the face is flat and no shadow. The subject must be centered with clear empty bead rows around all edges to allow easy mounting on a bead board. Add a clean, continuous dark outline around the subject so the silhouette is clearly readable when made with beads. Use a very limited solid color palette (maximum 6–8 colors total). No gradients, no shading, no lighting, no dithering, no texture. No anti-aliasing or smoothing — every pixel must be a perfect square bead aligned to the grid. The output image should be pixel-perfect, each grid only contains one color. Background must be pure solid white.
-```
-
-<img src="https://github.com/theamusing/perfectPixel/raw/main/assets/generated.png" width="50%" />
-
-The image is in pixel style but the grids are distorted. Also we don't know the number of grids.
-
-### Step 2: Use Perfect Pixel to refine your image
-
+### Static Image Refinement
 ```python
 import cv2
 from perfect_pixel import get_perfect_pixel
@@ -72,115 +93,28 @@ from perfect_pixel import get_perfect_pixel
 bgr = cv2.imread("images/avatar.png", cv2.IMREAD_COLOR)
 rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
+# Refine grid and sample
 w, h, out = get_perfect_pixel(rgb)
 ```
 
-<img src="https://github.com/theamusing/perfectPixel/raw/main/assets/refined2.png" width="50%" />
-
-*Also see [example.py](./example.py).*
+### Video API Quick Test
 ```bash
-python example.py
-```
-
-The grid size is automatically detected, and the image is refined.
-
-<img src="https://github.com/theamusing/perfectPixel/raw/main/assets/process2.png" width="100%" />
-
-Try integrate it into your own projects!
-
-## Video → Perfect Pixel (Desktop App)
-
-This fork extends Perfect Pixel to **video**: extract frames → refine each frame to a perfectly aligned pixel grid → output a PNG frame sequence. The pixel grid size is **auto-detected on the first frame and locked for all subsequent frames** to keep the sequence temporally stable (no per-frame flicker).
-
-The app is a **self-contained Tauri desktop shell** that bundles a Python FastAPI backend as a sidecar. The Tauri main process automatically launches the backend on a free port, waits for it to become healthy, exposes the URL to the UI, and tears it down on exit — so the user just double-clicks the app. See the interface contract in [`docs/API.md`](./docs/API.md).
-
-### Develop (one command)
-
-```bash
-# 1. Setup (Python 3.11/3.12 recommended for opencv wheels)
-python3.12 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
-
-# 2. Run the whole app — Tauri spawns the Python backend for you
-cd frontend
-npm install
-npm run tauri dev            # http://localhost:1420 (UI) + auto-launched backend
-```
-
-No need to run `python -m api.run` separately — the Rust shell starts it from the repo `.venv` and passes it a dynamically chosen port via `PERFECT_PIXEL_PORT`. The frontend shows an "Initializing engine…" screen until the backend reports healthy.
-
-For backend-only debugging you can still start it manually:
-
-```bash
-python -m api.run            # defaults to http://127.0.0.1:8765
-# or: PERFECT_PIXEL_PORT=9000 PERFECT_PIXEL_JOBS_DIR=/tmp/jobs python -m api.run
-```
-
-Environment variables consumed by `api/server.py`: `PERFECT_PIXEL_HOST`, `PERFECT_PIXEL_PORT`, `PERFECT_PIXEL_JOBS_DIR`.
-
-### Build a distributable app (no Python required on the host)
-
-```bash
-bash scripts/build_app.sh    # 1) PyInstaller sidecar  2) tauri build bundle
-```
-
-This builds the backend into a single `perfect-pixel-api` executable (via `scripts/build_sidecar.sh` / `.ps1`), places it under `frontend/src-tauri/binaries/` named with the Rust target triple, then bundles the full app (`Perfect Pixel.app` / `.exe`). Users get a double-click app with no Python/pip/npm/Rust needed.
-
-### Tauri shell commands
-
-| Command | Description |
-| :--- | :--- |
-| `backend_status` | `{ready, url, error}` — frontend polls this during boot |
-| `backend_url` | The backend base URL (e.g. `http://127.0.0.1:51234`) |
-| `open_logs_dir` | Open the directory containing `backend.log` |
-
-Quick test (manual backend):
-
-```bash
+# Submit video job
 curl -F video=@test.mp4 -F output_scale=4 http://127.0.0.1:8765/api/jobs
+# Poll job status
 curl http://127.0.0.1:8765/api/jobs/<job_id>
 ```
+See the full endpoint contract, parameter payloads, and sidecar integration details in [`docs/API.md`](./docs/API.md).
 
-See [`docs/API.md`](./docs/API.md) for the full endpoint contract, options, and Tauri integration notes.
+---
 
-## API Reference
-| Args | Description | 
-| :--- | :--- |
-| **image** | `RGB Image (H * W * 3)` |
-| **sample_method** | `"center", "median" or "majority"` |
-| **grid_size** | `Manually set grid size (grid_w, grid_h) to override auto-detection` |
-| **min_size** | `Minimum pixel size to consider valid` |
-| **peak_width** | `Minimum peak width for peak detection.` |
-| **refine_intensity** | `Intensity for grid line refinement. Recommended range is [0, 0.5]. Given original estimated grid line at x, the refinement will search in [x * (1 - refine_intensity), x * (1 + refine_intensity)].` |
-| **fix_square** | `Whether to enforce output to be square when detected image is almost square.` |
-| **debug** | `Whether to show debug plots.` |
+## 🧮 Algorithm Overview
+The core algorithm runs in three primary stages:
+1. **Grid Detection**: Estimates optimal grid spacing from the Fast Fourier Transform (FFT) magnitude of the image luminance.
+2. **Coordinate Refinement**: Performs 1D search on Sobel edges to align coordinate lines exactly to pixel boundaries.
+3. **Resampling**: Samples the source pixels at aligned grid centers to output clean, crisp, pixel-perfect illustrations.
 
-| Returns | Description |
-| :--- | :--- |
-| **refined_w** | `Width of the refined image` |
-| **refined_h** | `Height of the refined image` |
-| **scaled_image** | `Refined Image(W * H * 3)` |
+---
 
-## Algorithm
-
-<img src="https://github.com/theamusing/perfectPixel/raw/main/assets/algorithm.png" width="100%" />
-
-The whole algorithm mainly contains 3 steps:
-1. Detect grid size from FFT magnitude of the original image and generate grids.
-2. Detect edges using Sobel and refine the grids by aligning them to edges.
-3. Use the grids to sample the original image and to get the scaled image.
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=theamusing/perfectPixel&type=date&legend=top-left)](https://www.star-history.com/#theamusing/perfectPixel&type=date&legend=top-left)
-
-Thanks so much!
-
-
-
-
-
-
-
-
-
+## 📄 License
+This project is released under the **MIT License**.
