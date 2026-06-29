@@ -1,11 +1,31 @@
 """
 Video → Perfect Pixel.
 
-Reads a video frame-by-frame, locks the pixel grid size on the first frame
-(auto-detected via :func:`detect_grid_scale`) and reuses it for every
-subsequent frame so the output frame sequence stays temporally stable
-(no per-frame grid-size flicker). Each frame is refined with
-:func:`get_perfect_pixel` and written to ``output_dir`` as a PNG.
+Reads a video frame-by-frame and writes a temporally stable sequence of
+pixel-perfect PNG frames.
+
+Temporal stability mechanisms (see the analysis report this module implements):
+
+* **Multi-frame grid-size voting** (方案 1): the pixel grid size is locked from
+  the median of the first ``vote_frames`` detections instead of a single frame,
+  so a noisy first frame can't bias the whole video.
+* **Per-frame adaptive grid + temporal constraint** (方案 2, default on): each
+  frame re-runs :func:`refine_grids`, then the line positions are EMA-blended
+  with the previous frame's positions (``grid_blend`` = previous-frame weight).
+  Static scenes keep the grid nearly motionless; panning scenes track smoothly.
+  The output cell count is locked from the first frame so every output frame
+  has identical dimensions — a prerequisite for temporal filtering.
+* **Deterministic sampling** (方案 5): :func:`sample_majority` uses
+  ``KMEANS_PP_CENTERS`` + ``attempts=3`` and short-circuits near-uniform cells,
+  removing per-frame clustering jitter.
+* **Output temporal EMA** (方案 3, default on): each output pixel is
+  exponentially smoothed across frames, with per-pixel change detection so hard
+  edges / scene cuts pass through unblurred (no trailing).
+* **Compression-artifact denoising** (方案 4, default off): an optional
+  edge-preserving bilateral filter applied before analysis.
+
+When ``adaptive_grid=False`` and ``temporal_smoothing=False`` the pipeline falls
+back to the original "lock first-frame coordinates forever" behaviour.
 
 The channel-order convention follows ``example.py``: frames are read as BGR,
 converted to RGB before processing, and converted back to BGR before writing.
@@ -14,7 +34,7 @@ converted to RGB before processing, and converted back to BGR before writing.
 from __future__ import annotations
 
 import os
-from typing import Callable, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -41,11 +61,13 @@ except ImportError:  # pragma: no cover
         sample_median,
     )
 
-__all__ = ["process_frame", "process_video"]
+__all__ = ["process_frame", "process_video", "TemporalSmoother", "VideoGridTracker"]
 
 
 ProgressCallback = Callable[[int, int], None]
-GridCoords = Tuple[Sequence[int], Sequence[int]]
+GridCoords = Tuple[Sequence[float], Sequence[float]]
+# (nx, ny) — number of output cells along x / y (coords length is cells+1).
+GridCount = Tuple[int, int]
 
 
 def _fix_square(scaled_image: np.ndarray, fix_square: bool) -> np.ndarray:
@@ -74,12 +96,7 @@ def _sample_fixed_grid(
     sample_method: str,
     fix_square: bool,
 ) -> Tuple[int, int, np.ndarray]:
-    """Sample a frame using precomputed grid coordinates.
-
-    Video needs temporal stability more than per-frame local refinement. Reusing
-    the first frame's refined coordinates prevents gradient noise/compression
-    artifacts from moving grid lines by a pixel on later frames.
-    """
+    """Sample a frame using precomputed grid coordinates."""
     x_coords, y_coords = grid_coords
     if sample_method == "majority":
         out_rgb = sample_majority(rgb, x_coords, y_coords)
@@ -137,6 +154,181 @@ def _detect_grid(rgb: np.ndarray, peak_width: int, min_size: float) -> Optional[
     return int(gw), int(gh)
 
 
+# ---------------------------------------------------------------------------
+# 方案 1 — multi-frame grid-size voting
+# ---------------------------------------------------------------------------
+
+def _vote_grid_size(
+    frames: Sequence[np.ndarray],
+    n: int,
+    peak_width: int,
+    min_size: float,
+) -> Optional[Tuple[int, int]]:
+    """Lock the grid size from the median of the first ``n`` frame detections.
+
+    A single noisy first frame can bias the whole video; taking the median over
+    several detections rejects that. Returns None if every detection failed.
+    """
+    if n <= 0 or not frames:
+        return None
+
+    ws: List[int] = []
+    hs: List[int] = []
+    for frame in frames[:n]:
+        g = _detect_grid(frame, peak_width, min_size)
+        if g is not None:
+            ws.append(g[0])
+            hs.append(g[1])
+
+    if not ws:
+        return None
+
+    ws.sort()
+    hs.sort()
+    return ws[len(ws) // 2], hs[len(hs) // 2]
+
+
+# ---------------------------------------------------------------------------
+# 方案 2 — per-frame adaptive grid + temporal constraint
+# ---------------------------------------------------------------------------
+
+def _blend_1d(prev: Sequence[float], curr: Sequence[float], prev_weight: float) -> List[float]:
+    """EMA-blend two coordinate sequences: ``prev_weight * prev + (1-w) * curr``.
+
+    Returns a list aligned to ``curr``'s length. When lengths differ (rare under
+    a locked grid size) the overlap is blended and any extra ``curr`` tail is
+    passed through unchanged.
+    """
+    curr = list(curr)
+    if not prev:
+        return curr
+    m = min(len(prev), len(curr))
+    w = float(prev_weight)
+    out = [w * float(prev[i]) + (1.0 - w) * float(curr[i]) for i in range(m)]
+    if len(curr) > m:
+        out.extend(curr[m:])
+    return out
+
+
+def _fit_count(coords: Sequence[float], target: int) -> List[float]:
+    """Force a coordinate sequence to span exactly ``target`` cells (len = target+1).
+
+    Trims from the high end when too many lines were produced, or extrapolates
+    using the last inter-line spacing when too few. This keeps the output frame
+    dimensions identical across the whole video even if ``refine_grids``
+    occasionally emits ±1 line at an edge.
+    """
+    coords = [float(c) for c in coords]
+    need = target + 1
+    if len(coords) == need:
+        return coords
+
+    if len(coords) > need:
+        # Trim symmetric-ish: drop from the high end (edge cells are often partial).
+        return coords[:need]
+
+    # Too few: extrapolate at the high end using the last spacing.
+    while len(coords) < need:
+        if len(coords) >= 2:
+            step = coords[-1] - coords[-2]
+        else:
+            step = 1.0
+        coords.append(coords[-1] + step)
+    return coords
+
+
+class VideoGridTracker:
+    """Per-frame grid refinement with EMA temporal constraint + locked output count."""
+
+    def __init__(
+        self,
+        grid_size: Tuple[int, int],
+        refine_intensity: float,
+        grid_blend: float = 0.7,
+    ) -> None:
+        self.grid_size = grid_size
+        self.refine_intensity = refine_intensity
+        self.grid_blend = float(grid_blend)  # weight given to the previous frame
+        self.prev_coords: Optional[GridCoords] = None
+        self.locked_count: Optional[GridCount] = None
+
+    def update(self, rgb: np.ndarray) -> GridCoords:
+        gw, gh = self.grid_size
+        curr_x, curr_y = refine_grids(rgb, gw, gh, self.refine_intensity)
+
+        # First frame: record the output cell count and pass coordinates through.
+        if self.prev_coords is None:
+            self.locked_count = (len(curr_x) - 1, len(curr_y) - 1)
+            blended = (list(curr_x), list(curr_y))
+            self.prev_coords = blended
+            return blended
+
+        blended_x = _blend_1d(self.prev_coords[0], curr_x, self.grid_blend)
+        blended_y = _blend_1d(self.prev_coords[1], curr_y, self.grid_blend)
+
+        # Lock the output dimensions to the first frame's cell count.
+        assert self.locked_count is not None
+        blended_x = _fit_count(blended_x, self.locked_count[0])
+        blended_y = _fit_count(blended_y, self.locked_count[1])
+
+        blended = (blended_x, blended_y)
+        self.prev_coords = blended
+        return blended
+
+
+# ---------------------------------------------------------------------------
+# 方案 3 — output temporal EMA with per-pixel change detection
+# ---------------------------------------------------------------------------
+
+class TemporalSmoother:
+    """Exponential moving average over output frames.
+
+    ``alpha`` is the current frame's weight. Pixels whose colour changed by more
+    than ``change_threshold`` (max channel delta on 0..255) bypass smoothing so
+    hard edges and scene cuts stay sharp instead of trailing.
+    """
+
+    def __init__(self, alpha: float = 0.4, change_threshold: float = 30.0) -> None:
+        self.alpha = float(alpha)
+        self.change_threshold = float(change_threshold)
+        self.prev: Optional[np.ndarray] = None
+
+    def smooth(self, curr: np.ndarray) -> np.ndarray:
+        if self.prev is None or self.prev.shape != curr.shape:
+            self.prev = curr.astype(np.float32)
+            return curr
+
+        currf = curr.astype(np.float32)
+        prev = self.prev
+        diff = np.abs(currf - prev)
+        changed = diff.max(axis=-1) > self.change_threshold  # (H, W) bool
+        blended = self.alpha * currf + (1.0 - self.alpha) * prev
+        out = np.where(changed[..., None], currf, blended)
+        self.prev = out
+        return np.clip(np.rint(out), 0, 255).astype(np.uint8)
+
+
+# ---------------------------------------------------------------------------
+# 方案 4 — compression-artifact denoising (optional)
+# ---------------------------------------------------------------------------
+
+def _denoise(rgb: np.ndarray, strength: float) -> np.ndarray:
+    """Edge-preserving bilateral filter to suppress compression block/ringing artifacts.
+
+    Operates in BGR (matching cv2 conventions) and returns RGB.
+    """
+    if strength <= 0:
+        return rgb
+    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    sigma = max(1.0, float(strength) * 6.0)
+    bgr = cv2.bilateralFilter(bgr, 5, sigma, sigma)
+    return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+
+
+# ---------------------------------------------------------------------------
+# main entry
+# ---------------------------------------------------------------------------
+
 def process_video(
     video_path: str,
     output_dir: str,
@@ -150,6 +342,14 @@ def process_video(
     output_scale: int = 1,
     every_n_frames: int = 1,
     progress_callback: Optional[ProgressCallback] = None,
+    adaptive_grid: bool = True,
+    grid_blend: float = 0.7,
+    temporal_smoothing: bool = True,
+    temporal_alpha: float = 0.4,
+    scene_change_threshold: float = 30.0,
+    vote_frames: int = 5,
+    denoise: bool = False,
+    denoise_strength: float = 5.0,
 ) -> dict:
     """Process a video into a sequence of pixel-perfect PNG frames.
 
@@ -158,13 +358,29 @@ def process_video(
         output_dir: Directory to write ``frame_{idx:06d}.png`` into (created
             if missing).
         grid_size: Optional ``(w, h)`` override. If None, the grid is
-            auto-detected from the first frame and locked for all frames.
+            auto-detected and locked (multi-frame voting by default).
         output_scale: Nearest-neighbour upscale factor applied to each refined
             frame before writing (1 = native refined size).
         every_n_frames: Frame stride. 1 = every frame, 2 = every other, ...
         progress_callback: Called as ``callback(current, total)`` after each
             written frame; ``total`` is the number of frames that will be
             written (0 if the video length is unknown).
+        adaptive_grid: If True (default), re-refine the grid each frame and
+            EMA-blend with the previous frame (方案 2). If False, lock the first
+            frame's refined coordinates for all frames (legacy behaviour).
+        grid_blend: Previous-frame weight for the grid-line EMA (方案 2).
+            Higher = more stable, lower = more responsive.
+        temporal_smoothing: If True (default), EMA-smooth output colours across
+            frames with per-pixel change detection (方案 3).
+        temporal_alpha: Current-frame weight for the output EMA (方案 3).
+            Lower = smoother but slower to respond.
+        scene_change_threshold: Max channel delta above which a pixel bypasses
+            the temporal EMA (avoids trailing on edges / cuts).
+        vote_frames: Number of leading frames used to median-vote the locked
+            grid size (方案 1). Ignored when ``grid_size`` is provided.
+        denoise: If True, apply edge-preserving denoising before analysis
+            (方案 4). Off by default to avoid blurring clean sources.
+        denoise_strength: Bilateral filter strength (方案 4).
 
     Returns:
         ``{grid_size:{w,h}|None, total_frames, output_frames:[...], output_dir}``
@@ -184,40 +400,83 @@ def process_video(
     # number of frames that will actually be written under the stride
     total_out = max(0, (total_in + every_n_frames - 1) // every_n_frames) if total_in > 0 else 0
 
+    # When the caller overrides the grid size there's nothing to vote on.
+    effective_vote = 0 if grid_size is not None else max(0, int(vote_frames))
+
     locked_grid: Optional[Tuple[int, int]] = grid_size
-    locked_coords: Optional[GridCoords] = None
+    locked_coords: Optional[GridCoords] = None  # legacy (adaptive_grid=False)
+    tracker: Optional[VideoGridTracker] = None   # adaptive_grid=True
+    smoother = TemporalSmoother(temporal_alpha, scene_change_threshold) if temporal_smoothing else None
+
     written: list[str] = []
     out_index = 0
 
     try:
+        # ---- Phase 1: multi-frame voting (方案 1) --------------------------
+        buffered: List[np.ndarray] = []
         frame_pos = 0
-        while True:
-            ok, bgr = cap.read()
-            if not ok:
-                break
+        if locked_grid is None and effective_vote > 0:
+            while len(buffered) < effective_vote:
+                ok, bgr = cap.read()
+                if not ok:
+                    break
+                if frame_pos % every_n_frames == 0:
+                    buffered.append(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+                frame_pos += 1
 
-            if frame_pos % every_n_frames == 0:
-                rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            locked_grid = _vote_grid_size(buffered, effective_vote, peak_width, min_size)
+            # Fall back to a single-frame detection if every vote failed.
+            if locked_grid is None and buffered:
+                locked_grid = _detect_grid(buffered[0], peak_width, min_size)
 
-                # First frame: lock the grid if not overridden.
-                if locked_grid is None:
-                    locked_grid = _detect_grid(rgb, peak_width, min_size)
-                    # If detection fails on the first frame we leave it None;
-                    # get_perfect_pixel will then auto-detect per-frame as a
-                    # best-effort fallback (less stable).
+        # ---- Phase 2: process buffered frames, then the rest of the video --
+        def _frame_iter():
+            for fr in buffered:
+                yield fr
+            nonlocal frame_pos
+            while True:
+                ok, bgr = cap.read()
+                if not ok:
+                    break
+                if frame_pos % every_n_frames == 0:
+                    yield cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                frame_pos += 1
 
-                if locked_grid is not None and locked_coords is None:
-                    locked_coords = refine_grids(
-                        rgb,
-                        int(round(locked_grid[0])),
-                        int(round(locked_grid[1])),
-                        refine_intensity,
-                    )
+        for rgb in _frame_iter():
+            if denoise:
+                rgb = _denoise(rgb, denoise_strength)
 
+            # Best-effort per-frame detection if we still have no locked grid.
+            if locked_grid is None:
+                locked_grid = _detect_grid(rgb, peak_width, min_size)
+
+            if locked_grid is not None:
+                if adaptive_grid:
+                    if tracker is None:
+                        tracker = VideoGridTracker(locked_grid, refine_intensity, grid_blend)
+                    coords = tracker.update(rgb)
+                else:
+                    if locked_coords is None:
+                        locked_coords = refine_grids(
+                            rgb,
+                            int(round(locked_grid[0])),
+                            int(round(locked_grid[1])),
+                            refine_intensity,
+                        )
+                    coords = locked_coords
+
+                w, h, out_rgb = _sample_fixed_grid(
+                    rgb,
+                    coords,
+                    sample_method=sample_method,
+                    fix_square=fix_square,
+                )
+            else:
+                # Detection failed entirely: fall back to per-frame auto-detect
+                # (less stable, but keeps the sequence continuous).
                 w, h, out_rgb = process_frame(
                     rgb,
-                    locked_grid,
-                    grid_coords=locked_coords,
+                    None,
                     sample_method=sample_method,
                     refine_intensity=refine_intensity,
                     fix_square=fix_square,
@@ -225,26 +484,27 @@ def process_video(
                     peak_width=peak_width,
                 )
 
-                # get_perfect_pixel falls back to returning the original image
-                # (w/h None) on failure — still write it so the sequence stays
-                # continuous.
-                out_bgr = cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
-                if output_scale > 1:
-                    hh, ww = out_bgr.shape[:2]
-                    out_bgr = cv2.resize(
-                        out_bgr, (ww * output_scale, hh * output_scale),
-                        interpolation=cv2.INTER_NEAREST,
-                    )
+            if smoother is not None:
+                out_rgb = smoother.smooth(out_rgb)
 
-                name = f"frame_{out_index:06d}.png"
-                cv2.imwrite(os.path.join(output_dir, name), out_bgr)
-                written.append(name)
-                out_index += 1
+            # get_perfect_pixel falls back to returning the original image
+            # (w/h None) on failure — still write it so the sequence stays
+            # continuous.
+            out_bgr = cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
+            if output_scale > 1:
+                hh, ww = out_bgr.shape[:2]
+                out_bgr = cv2.resize(
+                    out_bgr, (ww * output_scale, hh * output_scale),
+                    interpolation=cv2.INTER_NEAREST,
+                )
 
-                if progress_callback is not None:
-                    progress_callback(out_index, total_out)
+            name = f"frame_{out_index:06d}.png"
+            cv2.imwrite(os.path.join(output_dir, name), out_bgr)
+            written.append(name)
+            out_index += 1
 
-            frame_pos += 1
+            if progress_callback is not None:
+                progress_callback(out_index, total_out)
     finally:
         cap.release()
 

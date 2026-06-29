@@ -26,6 +26,15 @@ export const translations = {
     minPixelSize: "Min Pixel Size",
     peakWidth: "Peak Width",
     frameSamplingStep: "Frame Sampling Step",
+    temporalStability: "Temporal Stability",
+    adaptiveGrid: "Adaptive Grid",
+    gridBlend: "Grid Blend Rate",
+    temporalSmoothing: "Temporal Smoothing",
+    temporalAlpha: "Smoothing Alpha",
+    sceneChangeThreshold: "Scene Change/Cut Threshold",
+    voteFrames: "Voting Frames",
+    denoise: "Denoise Preprocessing",
+    denoiseStrength: "Denoise Strength",
     tauriSidecarIntegration: "Tauri Sidecar Integration",
 
     // Main Panel Banner & General
@@ -45,6 +54,7 @@ export const translations = {
 
     // State 2: File Selected
     processToPixelArt: "Process to Pixel Art",
+    regeneratePixelArt: "Regenerate Pixel Art",
     initializingJob: "Initializing Job...",
 
     // State 3: Processing
@@ -107,6 +117,15 @@ export const translations = {
     minPixelSize: "最小像素尺寸",
     peakWidth: "波峰宽度",
     frameSamplingStep: "帧采样步长",
+    temporalStability: "时序稳定性",
+    adaptiveGrid: "自适应网格",
+    gridBlend: "网格融合比例",
+    temporalSmoothing: "时序平滑",
+    temporalAlpha: "平滑系数 Alpha",
+    sceneChangeThreshold: "场景切换/边缘阈值",
+    voteFrames: "首帧网格投票数",
+    denoise: "去噪预处理",
+    denoiseStrength: "去噪强度",
     tauriSidecarIntegration: "Tauri 侧车集成",
 
     // Main Panel Banner & General
@@ -126,6 +145,7 @@ export const translations = {
 
     // State 2: File Selected
     processToPixelArt: "处理为像素艺术",
+    regeneratePixelArt: "重新生成像素艺术",
     initializingJob: "正在初始化任务...",
 
     // State 3: Processing

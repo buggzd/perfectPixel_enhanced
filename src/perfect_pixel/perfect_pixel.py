@@ -154,18 +154,25 @@ def sample_majority(image, x_coords, y_coords, max_samples=128, iters=6, seed=42
             if cell.shape[0] < 2:
                 out[j, i] = cell[0]
             else:
-                # 使用 cv2.kmeans 聚成 2 类
-                # K=2, attempts=1, 使用 KMEANS_RANDOM_CENTERS 或 PP 模式
-                _, labels, centers = cv2.kmeans(
-                    cell, 2, None, criteria, 1, cv2.KMEANS_RANDOM_CENTERS
-                )
-                
-                # 计算两个簇的像素数量，labels 是二维数组 (N, 1)
-                count1 = np.sum(labels)  # 标签是 0 和 1
-                count0 = len(labels) - count1
-                
-                # 多数表决：取成员较多的中心点
-                out[j, i] = centers[1] if count1 >= count0 else centers[0]
+                # 纯色/近纯色区域直接取均值，跳过 KMeans——
+                # 纯色区聚成 2 类本身不稳定，聚类中心会随噪声跳动。
+                if float(cell.std(axis=0).max()) < 5.0:
+                    out[j, i] = cell.mean(axis=0)
+                else:
+                    # KMEANS_PP_CENTERS + attempts=3 替代 RANDOM_CENTERS + attempts=1，
+                    # 并用 cv2.setRNGSeed 固定 cv2 内部 RNG——
+                    # 否则 kmeans 的初始化随机性会在帧间产生聚类跳跃（闪烁）。
+                    cv2.setRNGSeed(seed)
+                    _, labels, centers = cv2.kmeans(
+                        cell, 2, None, criteria, 3, cv2.KMEANS_PP_CENTERS
+                    )
+
+                    # 计算两个簇的像素数量，labels 是二维数组 (N, 1)
+                    count1 = np.sum(labels)  # 标签是 0 和 1
+                    count0 = len(labels) - count1
+
+                    # 多数表决：取成员较多的中心点
+                    out[j, i] = centers[1] if count1 >= count0 else centers[0]
             # --- 替换部分结束 ---
 
     if image.dtype == np.uint8:

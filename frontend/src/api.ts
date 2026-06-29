@@ -26,6 +26,14 @@ export interface JobOptions {
   peak_width: number;
   output_scale: number; // [1, 16]
   every_n_frames: number; // >= 1
+  adaptive_grid?: boolean;
+  grid_blend?: number;
+  temporal_smoothing?: boolean;
+  temporal_alpha?: number;
+  scene_change_threshold?: number;
+  vote_frames?: number;
+  denoise?: boolean;
+  denoise_strength?: number;
 }
 
 export interface JobStatusResponse {
@@ -86,6 +94,31 @@ export async function createJob(
   formData.append("peak_width", options.peak_width.toString());
   formData.append("output_scale", options.output_scale.toString());
   formData.append("every_n_frames", options.every_n_frames.toString());
+
+  if (options.adaptive_grid !== undefined) {
+    formData.append("adaptive_grid", options.adaptive_grid ? "true" : "false");
+  }
+  if (options.grid_blend !== undefined) {
+    formData.append("grid_blend", options.grid_blend.toString());
+  }
+  if (options.temporal_smoothing !== undefined) {
+    formData.append("temporal_smoothing", options.temporal_smoothing ? "true" : "false");
+  }
+  if (options.temporal_alpha !== undefined) {
+    formData.append("temporal_alpha", options.temporal_alpha.toString());
+  }
+  if (options.scene_change_threshold !== undefined) {
+    formData.append("scene_change_threshold", options.scene_change_threshold.toString());
+  }
+  if (options.vote_frames !== undefined) {
+    formData.append("vote_frames", options.vote_frames.toString());
+  }
+  if (options.denoise !== undefined) {
+    formData.append("denoise", options.denoise ? "true" : "false");
+  }
+  if (options.denoise_strength !== undefined) {
+    formData.append("denoise_strength", options.denoise_strength.toString());
+  }
 
   const res = await fetch(`${getBaseUrl()}/api/jobs`, {
     method: "POST",

@@ -217,6 +217,10 @@ def sample_majority(image, x_coords, y_coords, max_samples=128, iters=6, seed=0)
                 cell = cell[rng.integers(0, n, size=max_samples)]
 
             c0 = cell[0]
+            # 纯色/近纯色区域直接取均值，跳过迭代——减少边缘噪声跳动。
+            if float(cell.std(axis=0).max()) < 5.0:
+                out[j, i] = cell.mean(axis=0)
+                continue
             c1 = cell[np.argmax(((cell - c0) ** 2).sum(1))]
 
             for _ in range(iters):

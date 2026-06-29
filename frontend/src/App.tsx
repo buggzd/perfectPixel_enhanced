@@ -63,6 +63,14 @@ function App() {
   const [peakWidth, setPeakWidth] = useState<number>(6);
   const [outputScale, setOutputScale] = useState<number>(4); // Default to 4x scaling
   const [everyNFrames, setEveryNFrames] = useState<number>(1);
+  const [adaptiveGrid, setAdaptiveGrid] = useState<boolean>(false);
+  const [gridBlend, setGridBlend] = useState<number>(0.7);
+  const [temporalSmoothing, setTemporalSmoothing] = useState<boolean>(false);
+  const [temporalAlpha, setTemporalAlpha] = useState<number>(0.4);
+  const [sceneChangeThreshold, setSceneChangeThreshold] = useState<number>(30.0);
+  const [voteFrames, setVoteFrames] = useState<number>(1);
+  const [denoise, setDenoise] = useState<boolean>(false);
+  const [denoiseStrength, setDenoiseStrength] = useState<number>(5.0);
 
   // Drag and drop states
   const [file, setFile] = useState<File | null>(null);
@@ -87,6 +95,9 @@ function App() {
   // Interval references
   const playIntervalRef = useRef<number | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
+
+  // Helper state to check if a job is actively processing
+  const isProcessing = isSubmitting || !!(currentJobId && jobStatus && (jobStatus.status === "running" || jobStatus.status === "queued"));
 
   // 0. Boot: ask the Tauri shell for the backend URL once the sidecar is ready.
   //    In a plain browser (no Tauri), skip and fall back to the default URL.
@@ -274,10 +285,21 @@ function App() {
   // Submit job
   const handleStartProcessing = async () => {
     if (!file) return;
+
+    // If we have an existing job, delete/cancel it first to clean up resources
+    if (currentJobId) {
+      try {
+        await deleteJob(currentJobId);
+      } catch (e) {
+        console.error("Cleanup old job error:", e);
+      }
+    }
+
     setIsSubmitting(true);
     setErrorMsg(null);
     setFrames([]);
     setCurrentFrameIndex(0);
+    setIsPlaying(false);
 
     const options: JobOptions = {
       sample_method: sampleMethod,
@@ -288,7 +310,15 @@ function App() {
       min_size: minSize,
       peak_width: peakWidth,
       output_scale: outputScale,
-      every_n_frames: everyNFrames
+      every_n_frames: everyNFrames,
+      adaptive_grid: adaptiveGrid,
+      grid_blend: gridBlend,
+      temporal_smoothing: temporalSmoothing,
+      temporal_alpha: temporalAlpha,
+      scene_change_threshold: sceneChangeThreshold,
+      vote_frames: voteFrames,
+      denoise: denoise,
+      denoise_strength: denoiseStrength,
     };
 
     try {
@@ -323,10 +353,9 @@ function App() {
   const handleGoBack = () => {
     if (currentJobId) {
       handleCancelJob();
-    } else {
-      setFile(null);
-      setErrorMsg(null);
     }
+    setFile(null);
+    setErrorMsg(null);
   };
 
   // Helper size converter
@@ -460,7 +489,7 @@ function App() {
             <select 
               value={sampleMethod} 
               onChange={(e) => setSampleMethod(e.target.value as any)}
-              disabled={!!currentJobId}
+              disabled={isProcessing}
             >
               <option value="majority">{t.majorityColor}</option>
               <option value="center">{t.centerSampling}</option>
@@ -479,7 +508,7 @@ function App() {
                 placeholder={t.autoWidth} 
                 value={gridSizeW} 
                 onChange={(e) => setGridSizeW(e.target.value)}
-                disabled={!!currentJobId}
+                disabled={isProcessing}
                 min="1"
               />
               <input 
@@ -487,7 +516,7 @@ function App() {
                 placeholder={t.autoHeight} 
                 value={gridSizeH} 
                 onChange={(e) => setGridSizeH(e.target.value)}
-                disabled={!!currentJobId}
+                disabled={isProcessing}
                 min="1"
               />
             </div>
@@ -505,19 +534,19 @@ function App() {
                 step="0.01" 
                 value={refineIntensity} 
                 onChange={(e) => setRefineIntensity(parseFloat(e.target.value))}
-                disabled={!!currentJobId}
+                disabled={isProcessing}
               />
             </div>
           </div>
 
-          <div className="form-group toggle-group" onClick={() => !currentJobId && setFixSquare(!fixSquare)}>
+          <div className="form-group toggle-group" onClick={() => !isProcessing && setFixSquare(!fixSquare)}>
             <label style={{ cursor: "pointer" }}>{t.forceSquareAlignment}</label>
             <label className="toggle-switch">
               <input 
                 type="checkbox" 
                 checked={fixSquare} 
                 onChange={() => {}} 
-                disabled={!!currentJobId} 
+                disabled={isProcessing} 
               />
               <span className="toggle-slider"></span>
             </label>
@@ -537,7 +566,7 @@ function App() {
                 step="1" 
                 value={outputScale} 
                 onChange={(e) => setOutputScale(parseInt(e.target.value, 10))}
-                disabled={!!currentJobId}
+                disabled={isProcessing}
               />
             </div>
           </div>
@@ -549,7 +578,7 @@ function App() {
                 type="number" 
                 value={minSize} 
                 onChange={(e) => setMinSize(parseFloat(e.target.value))}
-                disabled={!!currentJobId}
+                disabled={isProcessing}
                 min="1" 
                 step="0.5"
               />
@@ -560,7 +589,7 @@ function App() {
                 type="number" 
                 value={peakWidth} 
                 onChange={(e) => setPeakWidth(parseInt(e.target.value, 10))}
-                disabled={!!currentJobId}
+                disabled={isProcessing}
                 min="1"
               />
             </div>
@@ -575,10 +604,172 @@ function App() {
               type="number" 
               value={everyNFrames} 
               onChange={(e) => setEveryNFrames(parseInt(e.target.value, 10))}
-              disabled={!!currentJobId}
+              disabled={isProcessing}
               min="1"
             />
           </div>
+
+          <div className="settings-section-title">{t.temporalStability}</div>
+
+          <div className="form-group toggle-group" onClick={() => !isProcessing && setAdaptiveGrid(!adaptiveGrid)}>
+            <label style={{ cursor: "pointer" }}>{t.adaptiveGrid}</label>
+            <label className="toggle-switch">
+              <input 
+                type="checkbox" 
+                checked={adaptiveGrid} 
+                onChange={() => {}} 
+                disabled={isProcessing} 
+              />
+              <span className="toggle-slider"></span>
+            </label>
+          </div>
+
+          {adaptiveGrid && (
+            <div className="form-group">
+              <label>
+                {t.gridBlend}: <span className="slider-val">{gridBlend.toFixed(2)}</span>
+              </label>
+              <div className="slider-container">
+                <input 
+                  type="range" 
+                  min="0.0" 
+                  max="1.0" 
+                  step="0.05" 
+                  value={gridBlend} 
+                  onChange={(e) => setGridBlend(parseFloat(e.target.value))}
+                  disabled={isProcessing}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="form-group">
+            <label>
+              {t.voteFrames}
+              <span className="label-hint">vote_frames</span>
+            </label>
+            <select 
+              value={voteFrames} 
+              onChange={(e) => setVoteFrames(parseInt(e.target.value, 10))}
+              disabled={isProcessing}
+            >
+              <option value="0">0 (No Voting)</option>
+              <option value="1">1 (Single Frame)</option>
+              <option value="3">3 (3 Frames)</option>
+              <option value="5">5 (5 Frames)</option>
+              <option value="10">10 (10 Frames)</option>
+            </select>
+          </div>
+
+          <div className="form-group toggle-group" onClick={() => !isProcessing && setTemporalSmoothing(!temporalSmoothing)}>
+            <label style={{ cursor: "pointer" }}>{t.temporalSmoothing}</label>
+            <label className="toggle-switch">
+              <input 
+                type="checkbox" 
+                checked={temporalSmoothing} 
+                onChange={() => {}} 
+                disabled={isProcessing} 
+              />
+              <span className="toggle-slider"></span>
+            </label>
+          </div>
+
+          {temporalSmoothing && (
+            <>
+              <div className="form-group">
+                <label>
+                  {t.temporalAlpha}: <span className="slider-val">{temporalAlpha.toFixed(2)}</span>
+                </label>
+                <div className="slider-container">
+                  <input 
+                    type="range" 
+                    min="0.05" 
+                    max="1.0" 
+                    step="0.05" 
+                    value={temporalAlpha} 
+                    onChange={(e) => setTemporalAlpha(parseFloat(e.target.value))}
+                    disabled={isProcessing}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>
+                  {t.sceneChangeThreshold}: <span className="slider-val">{sceneChangeThreshold.toFixed(0)}</span>
+                </label>
+                <div className="slider-container">
+                  <input 
+                    type="range" 
+                    min="5" 
+                    max="100" 
+                    step="5" 
+                    value={sceneChangeThreshold} 
+                    onChange={(e) => setSceneChangeThreshold(parseFloat(e.target.value))}
+                    disabled={isProcessing}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="form-group toggle-group" onClick={() => !isProcessing && setDenoise(!denoise)}>
+            <label style={{ cursor: "pointer" }}>{t.denoise}</label>
+            <label className="toggle-switch">
+              <input 
+                type="checkbox" 
+                checked={denoise} 
+                onChange={() => {}} 
+                disabled={isProcessing} 
+              />
+              <span className="toggle-slider"></span>
+            </label>
+          </div>
+
+          {denoise && (
+            <div className="form-group">
+              <label>
+                {t.denoiseStrength}: <span className="slider-val">{denoiseStrength.toFixed(1)}</span>
+              </label>
+              <div className="slider-container">
+                <input 
+                  type="range" 
+                  min="1.0" 
+                  max="15.0" 
+                  step="0.5" 
+                  value={denoiseStrength} 
+                  onChange={(e) => setDenoiseStrength(parseFloat(e.target.value))}
+                  disabled={isProcessing}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Action Button inside Sidebar */}
+          {file && (
+            <button 
+              className="submit-btn" 
+              onClick={handleStartProcessing} 
+              disabled={isProcessing || !isApiConnected}
+              style={{ marginTop: "12px" }}
+            >
+              {isProcessing ? (
+                <>
+                  <span className="spinner" />
+                  {t.initializingJob}
+                </>
+              ) : currentJobId ? (
+                <>
+                  <Sparkles size={18} />
+                  {t.regeneratePixelArt}
+                </>
+              ) : (
+                <>
+                  <Sparkles size={18} />
+                  {t.processToPixelArt}
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         <div className="sidebar-footer">

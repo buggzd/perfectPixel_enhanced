@@ -107,6 +107,14 @@ def _run_job(
     peak_width: int,
     output_scale: int,
     every_n_frames: int,
+    adaptive_grid: bool,
+    grid_blend: float,
+    temporal_smoothing: bool,
+    temporal_alpha: float,
+    scene_change_threshold: float,
+    vote_frames: int,
+    denoise: bool,
+    denoise_strength: float,
 ) -> None:
     def on_progress(current: int, total: int) -> None:
         if job.cancel_flag.is_set():
@@ -133,6 +141,14 @@ def _run_job(
             output_scale=output_scale,
             every_n_frames=every_n_frames,
             progress_callback=on_progress,
+            adaptive_grid=adaptive_grid,
+            grid_blend=grid_blend,
+            temporal_smoothing=temporal_smoothing,
+            temporal_alpha=temporal_alpha,
+            scene_change_threshold=scene_change_threshold,
+            vote_frames=vote_frames,
+            denoise=denoise,
+            denoise_strength=denoise_strength,
         )
 
         with job._lock:
@@ -180,6 +196,14 @@ async def create_job(
     peak_width: int = Form(6),
     output_scale: int = Form(1),
     every_n_frames: int = Form(1),
+    adaptive_grid: bool = Form(True),
+    grid_blend: float = Form(0.7),
+    temporal_smoothing: bool = Form(True),
+    temporal_alpha: float = Form(0.4),
+    scene_change_threshold: float = Form(30.0),
+    vote_frames: int = Form(5),
+    denoise: bool = Form(False),
+    denoise_strength: float = Form(5.0),
 ):
     if sample_method not in VALID_SAMPLE_METHODS:
         raise HTTPException(
@@ -192,6 +216,14 @@ async def create_job(
         raise HTTPException(status_code=400, detail="output_scale must be in [1, 16]")
     if every_n_frames < 1:
         raise HTTPException(status_code=400, detail="every_n_frames must be >= 1")
+    if not (0.0 <= grid_blend <= 1.0):
+        raise HTTPException(status_code=400, detail="grid_blend must be in [0, 1]")
+    if not (0.0 < temporal_alpha <= 1.0):
+        raise HTTPException(status_code=400, detail="temporal_alpha must be in (0, 1]")
+    if vote_frames < 0:
+        raise HTTPException(status_code=400, detail="vote_frames must be >= 0")
+    if denoise_strength < 0:
+        raise HTTPException(status_code=400, detail="denoise_strength must be >= 0")
 
     grid_size = None
     if grid_size_w is not None and grid_size_h is not None:
@@ -227,6 +259,14 @@ async def create_job(
             peak_width=peak_width,
             output_scale=output_scale,
             every_n_frames=every_n_frames,
+            adaptive_grid=adaptive_grid,
+            grid_blend=grid_blend,
+            temporal_smoothing=temporal_smoothing,
+            temporal_alpha=temporal_alpha,
+            scene_change_threshold=scene_change_threshold,
+            vote_frames=vote_frames,
+            denoise=denoise,
+            denoise_strength=denoise_strength,
         ),
         daemon=True,
     )
