@@ -14,7 +14,7 @@ converted to RGB before processing, and converted back to BGR before writing.
 from __future__ import annotations
 
 import os
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -23,20 +23,81 @@ import numpy as np
 # backend (cv2 is required for VideoCapture anyway), fall back to the
 # numpy-only implementation.
 try:  # pragma: no cover - import-time branch depends on env
-    from .perfect_pixel import get_perfect_pixel, detect_grid_scale
+    from .perfect_pixel import (
+        detect_grid_scale,
+        get_perfect_pixel,
+        refine_grids,
+        sample_center,
+        sample_majority,
+        sample_median,
+    )
 except ImportError:  # pragma: no cover
-    from .perfect_pixel_noCV2 import get_perfect_pixel, detect_grid_scale
+    from .perfect_pixel_noCV2 import (
+        detect_grid_scale,
+        get_perfect_pixel,
+        refine_grids,
+        sample_center,
+        sample_majority,
+        sample_median,
+    )
 
 __all__ = ["process_frame", "process_video"]
 
 
 ProgressCallback = Callable[[int, int], None]
+GridCoords = Tuple[Sequence[int], Sequence[int]]
+
+
+def _fix_square(scaled_image: np.ndarray, fix_square: bool) -> np.ndarray:
+    """Mirror get_perfect_pixel's square correction for direct grid sampling."""
+    if not fix_square:
+        return scaled_image
+
+    refined_size_y, refined_size_x = scaled_image.shape[:2]
+    if abs(refined_size_x - refined_size_y) != 1:
+        return scaled_image
+
+    if refined_size_x > refined_size_y:
+        if refined_size_x % 2 == 1:
+            return scaled_image[:, :-1]
+        return np.concatenate([scaled_image[:1, :], scaled_image], axis=0)
+
+    if refined_size_y % 2 == 1:
+        return scaled_image[:-1, :]
+    return np.concatenate([scaled_image[:, :1], scaled_image], axis=1)
+
+
+def _sample_fixed_grid(
+    rgb: np.ndarray,
+    grid_coords: GridCoords,
+    *,
+    sample_method: str,
+    fix_square: bool,
+) -> Tuple[int, int, np.ndarray]:
+    """Sample a frame using precomputed grid coordinates.
+
+    Video needs temporal stability more than per-frame local refinement. Reusing
+    the first frame's refined coordinates prevents gradient noise/compression
+    artifacts from moving grid lines by a pixel on later frames.
+    """
+    x_coords, y_coords = grid_coords
+    if sample_method == "majority":
+        out_rgb = sample_majority(rgb, x_coords, y_coords)
+    elif sample_method == "median":
+        out_rgb = sample_median(rgb, x_coords, y_coords)
+    else:
+        out_rgb = sample_center(rgb, x_coords, y_coords)
+
+    out_rgb = _fix_square(out_rgb, fix_square)
+    refined_h, refined_w = out_rgb.shape[:2]
+    return refined_w, refined_h, out_rgb
 
 
 def process_frame(
     rgb: np.ndarray,
     grid_size: Optional[Tuple[int, int]],
     *,
+    grid_coords: Optional[GridCoords] = None,
     sample_method: str = "majority",
     refine_intensity: float = 0.25,
     fix_square: bool = True,
@@ -49,6 +110,14 @@ def process_frame(
     Returns ``(refined_w, refined_h, scaled_rgb)``; on failure ``(None, None,
     original_rgb)`` (matching :func:`get_perfect_pixel`'s fallback behaviour).
     """
+    if grid_coords is not None:
+        return _sample_fixed_grid(
+            rgb,
+            grid_coords,
+            sample_method=sample_method,
+            fix_square=fix_square,
+        )
+
     return get_perfect_pixel(
         rgb,
         sample_method=sample_method,
@@ -116,6 +185,7 @@ def process_video(
     total_out = max(0, (total_in + every_n_frames - 1) // every_n_frames) if total_in > 0 else 0
 
     locked_grid: Optional[Tuple[int, int]] = grid_size
+    locked_coords: Optional[GridCoords] = None
     written: list[str] = []
     out_index = 0
 
@@ -136,9 +206,18 @@ def process_video(
                     # get_perfect_pixel will then auto-detect per-frame as a
                     # best-effort fallback (less stable).
 
+                if locked_grid is not None and locked_coords is None:
+                    locked_coords = refine_grids(
+                        rgb,
+                        int(round(locked_grid[0])),
+                        int(round(locked_grid[1])),
+                        refine_intensity,
+                    )
+
                 w, h, out_rgb = process_frame(
                     rgb,
                     locked_grid,
+                    grid_coords=locked_coords,
                     sample_method=sample_method,
                     refine_intensity=refine_intensity,
                     fix_square=fix_square,

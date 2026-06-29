@@ -1,0 +1,166 @@
+export const translations = {
+  en: {
+    // Boot Screen & Error states
+    engineFailed: "Engine failed to start",
+    initializingEngine: "Initializing engine…",
+    backendLaunchError: "The pixel-processing backend could not be launched. Check the logs for details.",
+    startingBackend: "Starting the Perfect Pixel backend. This only takes a moment.",
+    openLogsDir: "Open Logs Directory",
+
+    // Sidebar
+    checkingServer: "Checking server...",
+    backendConnected: "Backend Connected",
+    backendOffline: "Backend Offline",
+    coreAlgorithm: "Core Algorithm",
+    sampleMethod: "Sample Method",
+    majorityColor: "Majority Color (Best)",
+    centerSampling: "Center Sampling",
+    medianColor: "Median Color",
+    gridDimensions: "Grid Dimensions (W & H)",
+    autoWidth: "Auto Width",
+    autoHeight: "Auto Height",
+    refineIntensity: "Refine Intensity",
+    forceSquareAlignment: "Force Square Alignment",
+    videoSizing: "Video & Sizing",
+    outputUpscaleFactor: "Output Upscale Factor",
+    minPixelSize: "Min Pixel Size",
+    peakWidth: "Peak Width",
+    frameSamplingStep: "Frame Sampling Step",
+    tauriSidecarIntegration: "Tauri Sidecar Integration",
+
+    // Main Panel Banner & General
+    fastapiOffline: "FastAPI backend is offline.",
+    activateVenv: "To run, activate the venv and start the server: ",
+    reconnect: "Reconnect",
+    checking: "Checking...",
+    errorPrefix: "Error:",
+    failedInitJob: "Failed to initiate video process.",
+    processingError: "An error occurred during video processing.",
+
+    // State 1: Upload / Drag & Drop
+    uploadVideoFile: "Upload Video File",
+    dragDropDesc: "Drag & drop your pixel style video here (mp4, mov, avi, webm)",
+    browseFiles: "Browse Files",
+    invalidFormat: "Invalid file format. Please drop a valid video file.",
+
+    // State 2: File Selected
+    processToPixelArt: "Process to Pixel Art",
+    initializingJob: "Initializing Job...",
+
+    // State 3: Processing
+    aligningGridColor: "Aligning Grid & Color sampling",
+    jobPrefix: "Job:",
+    processingFrames: "Processing video frames...",
+    processedFrames: "Processed Frames",
+    estimating: "Estimating...",
+    detectedGrid: "Detected Grid",
+    scanningFirstFrame: "Scanning First Frame...",
+    realtimePreview: "Real-time alignment pipeline preview",
+    cancelCleanup: "Cancel & Cleanup",
+
+    // State 4: Playback / Review
+    backUploadNew: "Back & Upload New",
+    pixelPerfectFrames: "Pixel Perfect Frames",
+    jobIdPrefix: "Job ID:",
+    complete: "Complete",
+    noFramesRender: "No frames processed to render.",
+    processingSpecs: "Processing Specs",
+    gridLocked: "Grid Locked",
+    auto: "Auto",
+    totalFrames: "Total Frames",
+    upscaleFactor: "Upscale Factor",
+    sampleRate: "Sample Rate",
+    sampleRateValue: (n: number) => `1/${n} frames`,
+    downloadFrame: "Download Frame",
+    frameListPng: "Frame List (PNG Sequence)",
+    clickToJump: "Click to jump to frame",
+    frameText: "Frame",
+    restart: "Restart",
+    play: "Play",
+    pause: "Pause",
+    fps: "FPS:",
+  },
+  zh: {
+    // Boot Screen & Error states
+    engineFailed: "引擎启动失败",
+    initializingEngine: "引擎初始化中…",
+    backendLaunchError: "像素处理后端无法启动。请检查日志了解详情。",
+    startingBackend: "正在启动 Perfect Pixel 后端，这只需要片刻时间。",
+    openLogsDir: "打开日志目录",
+
+    // Sidebar
+    checkingServer: "正在检查服务器...",
+    backendConnected: "后端已连接",
+    backendOffline: "后端离线",
+    coreAlgorithm: "核心算法",
+    sampleMethod: "采样方法",
+    majorityColor: "多数颜色（最佳）",
+    centerSampling: "中心采样",
+    medianColor: "中位数颜色",
+    gridDimensions: "网格维度 (宽 & 高)",
+    autoWidth: "自动宽度",
+    autoHeight: "自动高度",
+    refineIntensity: "优化强度",
+    forceSquareAlignment: "强制正方形对齐",
+    videoSizing: "视频与尺寸",
+    outputUpscaleFactor: "输出放大倍数",
+    minPixelSize: "最小像素尺寸",
+    peakWidth: "波峰宽度",
+    frameSamplingStep: "帧采样步长",
+    tauriSidecarIntegration: "Tauri 侧车集成",
+
+    // Main Panel Banner & General
+    fastapiOffline: "FastAPI 后端离线。",
+    activateVenv: "要运行，请激活虚拟环境并启动服务器: ",
+    reconnect: "重新连接",
+    checking: "检查中...",
+    errorPrefix: "错误:",
+    failedInitJob: "无法初始化视频处理任务。",
+    processingError: "视频处理过程中发生错误。",
+
+    // State 1: Upload / Drag & Drop
+    uploadVideoFile: "上传视频文件",
+    dragDropDesc: "拖放您的像素风格视频到此处 (mp4, mov, avi, webm)",
+    browseFiles: "浏览文件",
+    invalidFormat: "无效的文件格式。请拖放有效的视频文件。",
+
+    // State 2: File Selected
+    processToPixelArt: "处理为像素艺术",
+    initializingJob: "正在初始化任务...",
+
+    // State 3: Processing
+    aligningGridColor: "网格对齐与颜色采样",
+    jobPrefix: "任务:",
+    processingFrames: "正在处理视频帧...",
+    processedFrames: "已处理帧数",
+    estimating: "正在估算...",
+    detectedGrid: "检测到网格",
+    scanningFirstFrame: "正在扫描第一帧...",
+    realtimePreview: "实时对齐流程预览",
+    cancelCleanup: "取消并清理",
+
+    // State 4: Playback / Review
+    backUploadNew: "返回并上传新视频",
+    pixelPerfectFrames: "像素级完美帧",
+    jobIdPrefix: "任务 ID:",
+    complete: "完成",
+    noFramesRender: "没有处理完成的帧可渲染。",
+    processingSpecs: "处理规格",
+    gridLocked: "锁定网格",
+    auto: "自动",
+    totalFrames: "总帧数",
+    upscaleFactor: "放大倍数",
+    sampleRate: "采样率",
+    sampleRateValue: (n: number) => `1/${n} 帧`,
+    downloadFrame: "下载当前帧",
+    frameListPng: "帧列表 (PNG 序列)",
+    clickToJump: "点击跳转至该帧",
+    frameText: "帧",
+    restart: "重头播放",
+    play: "播放",
+    pause: "暂停",
+    fps: "帧率:",
+  }
+};
+
+export type Language = "en" | "zh";

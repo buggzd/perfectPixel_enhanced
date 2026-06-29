@@ -28,8 +28,21 @@ import {
   Download
 } from "lucide-react";
 import "./App.css";
+import { translations, Language } from "./i18n";
 
 function App() {
+  // Language State
+  const [lang, setLang] = useState<Language>(() => {
+    const saved = localStorage.getItem("pp_lang");
+    return (saved === "en" || saved === "zh") ? saved : "zh";
+  });
+  const t = translations[lang];
+
+  const handleLangChange = (newLang: Language) => {
+    setLang(newLang);
+    localStorage.setItem("pp_lang", newLang);
+  };
+
   // Connection State
   const [isApiConnected, setIsApiConnected] = useState<boolean | null>(null);
   const [isCheckingConnection, setIsCheckingConnection] = useState(false);
@@ -197,7 +210,7 @@ function App() {
               clearInterval(pollIntervalRef.current);
               pollIntervalRef.current = null;
             }
-            setErrorMsg(status.error || "An error occurred during video processing.");
+            setErrorMsg(status.error || t.processingError);
           }
         } catch (e: any) {
           console.error("Polling error: ", e);
@@ -240,7 +253,7 @@ function App() {
         setFile(droppedFile);
         setErrorMsg(null);
       } else {
-        setErrorMsg("Invalid file format. Please drop a valid video file.");
+        setErrorMsg(t.invalidFormat);
       }
     }
   };
@@ -282,7 +295,7 @@ function App() {
       const response = await createJob(file, options);
       setCurrentJobId(response.job_id);
     } catch (e: any) {
-      setErrorMsg(e.message || "Failed to initiate video process.");
+      setErrorMsg(e.message || t.failedInitJob);
     } finally {
       setIsSubmitting(false);
     }
@@ -345,13 +358,13 @@ function App() {
         }}
       >
         <Sparkles size={36} />
-        <div style={{ fontSize: 18, fontWeight: 600 }}>
-          {isError ? "Engine failed to start" : "Initializing engine…"}
+         <div style={{ fontSize: 18, fontWeight: 600 }}>
+          {isError ? t.engineFailed : t.initializingEngine}
         </div>
         <div style={{ fontSize: 13, opacity: 0.6, maxWidth: 380, textAlign: "center" }}>
           {isError
-            ? "The pixel-processing backend could not be launched. Check the logs for details."
-            : "Starting the Perfect Pixel backend. This only takes a moment."}
+            ? t.backendLaunchError
+            : t.startingBackend}
         </div>
         {!isError && (
           <div
@@ -381,7 +394,7 @@ function App() {
             }}
           >
             <AlertTriangle size={16} />
-            Open Logs Directory
+            {t.openLogsDir}
           </button>
         )}
         <style>{`@keyframes pp-spin { to { transform: rotate(360deg); } }`}</style>
@@ -395,32 +408,53 @@ function App() {
       {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="sidebar-header">
-          <div className="logo-area">
-            <div className="logo-icon">
-              <Sparkles size={18} />
+          <div className="logo-area" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div className="logo-icon">
+                <Sparkles size={18} />
+              </div>
+              <span className="logo-text">Perfect Pixel</span>
+              <span className="logo-version">v1.1</span>
             </div>
-            <span className="logo-text">Perfect Pixel</span>
-            <span className="logo-version">v1.1</span>
+            {/* Language Switcher */}
+            <select
+              value={lang}
+              onChange={(e) => handleLangChange(e.target.value as Language)}
+              className="lang-select"
+              style={{
+                width: "auto",
+                padding: "2px 8px",
+                fontSize: "12px",
+                borderRadius: "4px",
+                background: "var(--bg-tertiary)",
+                border: "1px solid var(--border-color)",
+                color: "var(--text-secondary)",
+                cursor: "pointer",
+              }}
+            >
+              <option value="zh">中文</option>
+              <option value="en">EN</option>
+            </select>
           </div>
           <div className="connection-status">
             <div className={`status-dot ${isApiConnected ? "connected" : "disconnected"}`} />
             <span>
               {isApiConnected === null 
-                ? "Checking server..." 
+                ? t.checkingServer 
                 : isApiConnected 
-                  ? "Backend Connected" 
-                  : "Backend Offline"}
+                  ? t.backendConnected 
+                  : t.backendOffline}
             </span>
           </div>
         </div>
 
         {/* Configurations Form */}
         <div className="settings-form">
-          <div className="settings-section-title">Core Algorithm</div>
+          <div className="settings-section-title">{t.coreAlgorithm}</div>
           
           <div className="form-group">
             <label>
-              Sample Method
+              {t.sampleMethod}
               <span className="label-hint">sample_method</span>
             </label>
             <select 
@@ -428,21 +462,21 @@ function App() {
               onChange={(e) => setSampleMethod(e.target.value as any)}
               disabled={!!currentJobId}
             >
-              <option value="majority">Majority Color (Best)</option>
-              <option value="center">Center Sampling</option>
-              <option value="median">Median Color</option>
+              <option value="majority">{t.majorityColor}</option>
+              <option value="center">{t.centerSampling}</option>
+              <option value="median">{t.medianColor}</option>
             </select>
           </div>
 
           <div className="form-group">
             <label>
-              Grid Dimensions (W & H)
+              {t.gridDimensions}
               <span className="label-hint">grid_size</span>
             </label>
             <div className="form-group-row">
               <input 
                 type="number" 
-                placeholder="Auto Width" 
+                placeholder={t.autoWidth} 
                 value={gridSizeW} 
                 onChange={(e) => setGridSizeW(e.target.value)}
                 disabled={!!currentJobId}
@@ -450,7 +484,7 @@ function App() {
               />
               <input 
                 type="number" 
-                placeholder="Auto Height" 
+                placeholder={t.autoHeight} 
                 value={gridSizeH} 
                 onChange={(e) => setGridSizeH(e.target.value)}
                 disabled={!!currentJobId}
@@ -461,7 +495,7 @@ function App() {
 
           <div className="form-group">
             <label>
-              Refine Intensity: <span className="slider-val">{refineIntensity.toFixed(2)}</span>
+              {t.refineIntensity}: <span className="slider-val">{refineIntensity.toFixed(2)}</span>
             </label>
             <div className="slider-container">
               <input 
@@ -477,7 +511,7 @@ function App() {
           </div>
 
           <div className="form-group toggle-group" onClick={() => !currentJobId && setFixSquare(!fixSquare)}>
-            <label style={{ cursor: "pointer" }}>Force Square Alignment</label>
+            <label style={{ cursor: "pointer" }}>{t.forceSquareAlignment}</label>
             <label className="toggle-switch">
               <input 
                 type="checkbox" 
@@ -489,11 +523,11 @@ function App() {
             </label>
           </div>
 
-          <div className="settings-section-title">Video & Sizing</div>
+          <div className="settings-section-title">{t.videoSizing}</div>
 
           <div className="form-group">
             <label>
-              Output Upscale Factor: <span className="slider-val">{outputScale}x</span>
+              {t.outputUpscaleFactor}: <span className="slider-val">{outputScale}x</span>
             </label>
             <div className="slider-container">
               <input 
@@ -510,7 +544,7 @@ function App() {
 
           <div className="form-group-row">
             <div className="form-group">
-              <label>Min Pixel Size</label>
+              <label>{t.minPixelSize}</label>
               <input 
                 type="number" 
                 value={minSize} 
@@ -521,7 +555,7 @@ function App() {
               />
             </div>
             <div className="form-group">
-              <label>Peak Width</label>
+              <label>{t.peakWidth}</label>
               <input 
                 type="number" 
                 value={peakWidth} 
@@ -534,7 +568,7 @@ function App() {
 
           <div className="form-group">
             <label>
-              Frame Sampling Step
+              {t.frameSamplingStep}
               <span className="label-hint">every_n_frames</span>
             </label>
             <input 
@@ -548,7 +582,7 @@ function App() {
         </div>
 
         <div className="sidebar-footer">
-          <div className="version-note">Tauri Sidecar Integration</div>
+          <div className="version-note">{t.tauriSidecarIntegration}</div>
         </div>
       </aside>
 
@@ -559,10 +593,10 @@ function App() {
           <div className="alert-banner">
             <AlertTriangle size={18} />
             <div>
-              <strong>FastAPI backend is offline.</strong> To run, activate the venv and start the server: <code>python -m api.run</code>
+              <strong>{t.fastapiOffline}</strong> {t.activateVenv} <code>python -m api.run</code>
             </div>
             <button className="alert-banner-btn" onClick={verifyBackendHealth}>
-              {isCheckingConnection ? "Checking..." : "Reconnect"}
+              {isCheckingConnection ? t.checking : t.reconnect}
             </button>
           </div>
         )}
@@ -571,7 +605,7 @@ function App() {
           {errorMsg && (
             <div className="alert-banner" style={{ background: "rgba(255, 84, 112, 0.15)", borderColor: "rgba(255, 84, 112, 0.2)", color: "#ff8a9e", borderRadius: "12px", width: "100%", maxWidth: "680px", marginBottom: "20px" }}>
               <AlertTriangle size={18} />
-              <div><strong>Error:</strong> {errorMsg}</div>
+              <div><strong>{t.errorPrefix}</strong> {errorMsg}</div>
               <button className="file-remove-btn" style={{ marginLeft: "auto" }} onClick={() => setErrorMsg(null)}>&times;</button>
             </div>
           )}
@@ -596,9 +630,9 @@ function App() {
               <div className="upload-icon-container">
                 <UploadCloud size={36} />
               </div>
-              <h3 className="dropzone-title">Upload Video File</h3>
-              <p className="dropzone-desc">Drag & drop your pixel style video here (mp4, mov, avi, webm)</p>
-              <button className="browse-btn">Browse Files</button>
+              <h3 className="dropzone-title">{t.uploadVideoFile}</h3>
+              <p className="dropzone-desc">{t.dragDropDesc}</p>
+              <button className="browse-btn">{t.browseFiles}</button>
             </div>
           )}
 
@@ -628,12 +662,12 @@ function App() {
                 {isSubmitting ? (
                   <>
                     <span className="spinner" />
-                    Initializing Job...
+                    {t.initializingJob}
                   </>
                 ) : (
                   <>
                     <Sparkles size={18} />
-                    Process to Pixel Art
+                    {t.processToPixelArt}
                   </>
                 )}
               </button>
@@ -645,8 +679,8 @@ function App() {
             <div className="process-card">
               <div className="process-header">
                 <div className="process-title-area">
-                  <h3 className="process-title">Aligning Grid & Color sampling</h3>
-                  <span className="process-job-id">Job: {jobStatus.id}</span>
+                  <h3 className="process-title">{t.aligningGridColor}</h3>
+                  <span className="process-job-id">{t.jobPrefix} {jobStatus.id}</span>
                 </div>
                 <div className={`status-badge ${jobStatus.status}`}>
                   <Activity size={12} className={jobStatus.status === "running" ? "spinner" : ""} />
@@ -656,7 +690,7 @@ function App() {
 
               <div className="progress-section">
                 <div className="progress-metrics">
-                  <span>Processing video frames...</span>
+                  <span>{t.processingFrames}</span>
                   <span className="progress-percent">{Math.round(jobStatus.progress * 100)}%</span>
                 </div>
                 <div className="progress-track">
@@ -668,15 +702,15 @@ function App() {
 
               <div className="stats-grid">
                 <div className="stat-item">
-                  <span className="stat-label">Processed Frames</span>
-                  <span className="stat-value">{jobStatus.current_frame} / {jobStatus.total_frames || "Estimating..."}</span>
+                  <span className="stat-label">{t.processedFrames}</span>
+                  <span className="stat-value">{jobStatus.current_frame} / {jobStatus.total_frames || t.estimating}</span>
                 </div>
                 <div className="stat-item">
-                  <span className="stat-label">Detected Grid</span>
+                  <span className="stat-label">{t.detectedGrid}</span>
                   <span className="stat-value">
                     {jobStatus.grid_size 
                       ? `${jobStatus.grid_size.w} × ${jobStatus.grid_size.h}` 
-                      : "Scanning First Frame..."}
+                      : t.scanningFirstFrame}
                   </span>
                 </div>
               </div>
@@ -690,17 +724,17 @@ function App() {
                       alt="Current Process Frame" 
                       className="player-frame-img"
                     />
-                    <div className="viewport-overlay">Frame {frames[frames.length - 1].index}</div>
+                    <div className="viewport-overlay">{t.frameText} {frames[frames.length - 1].index}</div>
                   </div>
                   <span style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "8px", display: "block" }}>
-                    Real-time alignment pipeline preview
+                    {t.realtimePreview}
                   </span>
                 </div>
               )}
 
               <button className="cancel-btn" onClick={handleCancelJob}>
                 <Trash2 size={16} />
-                Cancel & Cleanup
+                {t.cancelCleanup}
               </button>
             </div>
           )}
@@ -711,15 +745,15 @@ function App() {
               <div className="viewer-header">
                 <button className="back-home-btn" onClick={handleGoBack}>
                   <ArrowLeft size={14} />
-                  Back & Upload New
+                  {t.backUploadNew}
                 </button>
                 <div className="viewer-title">
-                  <h2>Pixel Perfect Frames</h2>
-                  <span className="process-job-id">Job ID: {jobStatus.id}</span>
+                  <h2>{t.pixelPerfectFrames}</h2>
+                  <span className="process-job-id">{t.jobIdPrefix} {jobStatus.id}</span>
                 </div>
                 <div className="status-badge done">
                   <CheckCircle2 size={12} />
-                  Complete
+                  {t.complete}
                 </div>
               </div>
 
@@ -735,7 +769,7 @@ function App() {
                           className="player-frame-img"
                         />
                         <div className="viewport-overlay">
-                          Frame {frames[currentFrameIndex].index} / {frames.length - 1}
+                          {t.frameText} {frames[currentFrameIndex].index} / {frames.length - 1}
                         </div>
                       </div>
 
@@ -766,7 +800,7 @@ function App() {
                                 setIsPlaying(false);
                                 setCurrentFrameIndex(0);
                               }}
-                              title="Restart"
+                              title={t.restart}
                             >
                               <RefreshCw size={16} />
                             </button>
@@ -775,13 +809,13 @@ function App() {
                           <button 
                             className="btn-ctrl play-pause" 
                             onClick={() => setIsPlaying(!isPlaying)}
-                            title={isPlaying ? "Pause" : "Play"}
+                            title={isPlaying ? t.pause : t.play}
                           >
                             {isPlaying ? <Pause size={20} /> : <Play size={20} style={{ transform: "translateX(1px)" }} />}
                           </button>
 
                           <div className="playback-speed">
-                            <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>FPS:</span>
+                            <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{t.fps}</span>
                             <select 
                               className="speed-select" 
                               value={playbackFps}
@@ -800,7 +834,7 @@ function App() {
                     </>
                   ) : (
                     <div style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
-                      No frames processed to render.
+                      {t.noFramesRender}
                     </div>
                   )}
                 </div>
@@ -808,27 +842,27 @@ function App() {
                 {/* Info and download actions sidebar */}
                 <div className="player-sidebar">
                   <div className="info-panel-card">
-                    <span className="info-title">Processing Specs</span>
+                    <span className="info-title">{t.processingSpecs}</span>
                     <div className="info-grid">
                       <div className="info-row">
-                        <span className="info-label">Grid Locked</span>
+                        <span className="info-label">{t.gridLocked}</span>
                         <span className="info-value">
                           {jobStatus.grid_size 
                             ? `${jobStatus.grid_size.w} × ${jobStatus.grid_size.h}` 
-                            : "Auto"}
+                            : t.auto}
                         </span>
                       </div>
                       <div className="info-row">
-                        <span className="info-label">Total Frames</span>
+                        <span className="info-label">{t.totalFrames}</span>
                         <span className="info-value">{frames.length}</span>
                       </div>
                       <div className="info-row">
-                        <span className="info-label">Upscale Factor</span>
+                        <span className="info-label">{t.upscaleFactor}</span>
                         <span className="info-value">{outputScale}x</span>
                       </div>
                       <div className="info-row">
-                        <span className="info-label">Sample Rate</span>
-                        <span className="info-value">1/{everyNFrames} frames</span>
+                        <span className="info-label">{t.sampleRate}</span>
+                        <span className="info-value">{t.sampleRateValue(everyNFrames)}</span>
                       </div>
                     </div>
 
@@ -841,7 +875,7 @@ function App() {
                     >
                       <button className="export-btn" style={{ width: "100%" }}>
                         <Download size={16} />
-                        Download Frame
+                        {t.downloadFrame}
                       </button>
                     </a>
                   </div>
@@ -851,8 +885,8 @@ function App() {
               {/* Frame Sequence Thumbnails Grid */}
               <div className="thumbnails-container">
                 <div className="thumbnails-header">
-                  <span className="info-title">Frame List (PNG Sequence)</span>
-                  <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Click to jump to frame</span>
+                  <span className="info-title">{t.frameListPng}</span>
+                  <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{t.clickToJump}</span>
                 </div>
                 <div className="thumbnails-grid">
                   {frames.map((frame, index) => (
