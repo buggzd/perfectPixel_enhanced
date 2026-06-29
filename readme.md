@@ -101,12 +101,44 @@ w, h, out = get_perfect_pixel(rgb)
 
 ### Video API Quick Test
 ```bash
-# Submit video job
+# Submit video job (temporal stability defaults to on)
 curl -F video=@test.mp4 -F output_scale=4 http://127.0.0.1:8765/api/jobs
 # Poll job status
 curl http://127.0.0.1:8765/api/jobs/<job_id>
 ```
 See the full endpoint contract, parameter payloads, and sidecar integration details in [`docs/API.md`](./docs/API.md).
+
+#### Temporal Stability Parameters
+Video processing enables several temporal-stability mechanisms by default (all optional, exposed as form fields on `POST /api/jobs`):
+
+| Parameter | Default | Purpose |
+| :--- | :--- | :--- |
+| `adaptive_grid` | `true` | Per-frame grid refinement EMA-blended with the previous frame |
+| `grid_blend` | `0.7` | Previous-frame weight for the grid-line EMA `[0, 1]` |
+| `temporal_smoothing` | `true` | Per-pixel EMA over output colours with change detection |
+| `temporal_alpha` | `0.4` | Current-frame weight for the output EMA `(0, 1]` |
+| `scene_change_threshold` | `30.0` | Pixels changing more than this bypass smoothing |
+| `vote_frames` | `5` | Median-vote the locked grid size over the first N frames |
+| `denoise` | `false` | Optional edge-preserving denoising of compression artifacts |
+| `denoise_strength` | `5.0` | Denoising strength (`>=0`) |
+
+Set `adaptive_grid=false` and `temporal_smoothing=false` together to reproduce the legacy "lock first-frame coordinates, no colour smoothing" behaviour.
+
+---
+
+## 🚀 Continuous Delivery
+Pushing a `v*` tag triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml), which builds the Python wheel + sdist and publishes a GitHub Release with the artifacts attached (auto-generated release notes):
+
+```bash
+git tag v0.1.4
+git push origin v0.1.4
+```
+
+Releases land on the [GitHub Releases page](https://github.com/buggzd/perfectPixel_enhanced/releases). Install the published wheel directly:
+
+```bash
+pip install perfect_pixel-0.1.4-py3-none-any.whl
+```
 
 ---
 
@@ -119,4 +151,4 @@ The core algorithm runs in three primary stages:
 ---
 
 ## 📄 License
-This project is released under the **MIT License**.
+This project is released under the **MIT License** — see [`LICENSE`](./LICENSE).

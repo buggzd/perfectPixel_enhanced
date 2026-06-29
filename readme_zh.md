@@ -99,12 +99,44 @@ w, h, out = get_perfect_pixel(rgb)
 
 ### 视频处理接口快捷测试
 ```bash
-# 提交视频任务
+# 提交视频任务（时序稳定性默认开启）
 curl -F video=@test.mp4 -F output_scale=4 http://127.0.0.1:8765/api/jobs
 # 查询任务状态
 curl http://127.0.0.1:8765/api/jobs/<job_id>
 ```
 完整的接口设计、参数负载以及 sidecar 集成模式请参考接口协议文档 [`docs/API.md`](./docs/API.md)。
+
+#### 时序稳定性参数
+视频处理默认开启多套时序稳定性机制（均为可选，作为 `POST /api/jobs` 的表单字段透传）：
+
+| 参数 | 默认 | 用途 |
+| :--- | :--- | :--- |
+| `adaptive_grid` | `true` | 每帧重新精细化网格并与前一帧 EMA 混合 |
+| `grid_blend` | `0.7` | 网格线 EMA 的前一帧权重 `[0, 1]` |
+| `temporal_smoothing` | `true` | 输出颜色逐像素 EMA 平滑（带变化检测） |
+| `temporal_alpha` | `0.4` | 输出 EMA 的当前帧权重 `(0, 1]` |
+| `scene_change_threshold` | `30.0` | 像素变化超此值则直通，不做平滑 |
+| `vote_frames` | `5` | 用前 N 帧中位数投票锁定网格尺寸 |
+| `denoise` | `false` | 可选的保边去压缩伪影预处理 |
+| `denoise_strength` | `5.0` | 去噪强度（`>=0`） |
+
+同时设 `adaptive_grid=false`、`temporal_smoothing=false` 可复现旧行为（锁第一帧坐标、无颜色平滑）。
+
+---
+
+## 🚀 持续交付
+推送 `v*` 形式的 tag 会触发 [`.github/workflows/release.yml`](./.github/workflows/release.yml)，自动构建 Python wheel + sdist 并发布 GitHub Release（附带产物、自动生成发版说明）：
+
+```bash
+git tag v0.1.4
+git push origin v0.1.4
+```
+
+发版产物位于 [GitHub Releases](https://github.com/buggzd/perfectPixel_enhanced/releases)，可直接安装：
+
+```bash
+pip install perfect_pixel-0.1.4-py3-none-any.whl
+```
 
 ---
 
@@ -117,4 +149,4 @@ curl http://127.0.0.1:8765/api/jobs/<job_id>
 ---
 
 ## 📄 开源协议
-本项目采用 **MIT License** 授权协议发布。
+本项目采用 **MIT License** 授权协议发布，详见 [`LICENSE`](./LICENSE)。
