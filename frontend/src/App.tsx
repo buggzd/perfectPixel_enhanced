@@ -216,6 +216,12 @@ function App() {
   const thumbnailsContainerRef = useRef<HTMLDivElement>(null);
   const settingsFormRef = useRef<HTMLDivElement>(null);
 
+  // Scroll animation state refs
+  const thumbnailsInertiaVelocity = useRef<number>(0);
+  const thumbnailsInertiaFrameId = useRef<number | null>(null);
+  const thumbnailsInertiaIsMoving = useRef<boolean>(false);
+  const thumbnailsAlignmentFrameId = useRef<number | null>(null);
+
   // Helper state to check if a job is actively processing
   const isProcessing = isSubmitting || !!(currentJobId && jobStatus && (jobStatus.status === "running" || jobStatus.status === "queued"));
 
@@ -419,9 +425,31 @@ function App() {
   // scrolling just pans the list and may move the active frame out of view.
   // The active frame only moves via play / scrubber / click, which re-triggers
   // this effect.
+  // Programmatic scroll: place the active frame in the 2nd visible slot,
+  // keeping the previous frame visible above it. The first frame clamps to the
+  // top because nothing precedes it.
+  //
+  // Manual wheel scrolling is intentionally NOT coupled to the active frame:
+  // scrolling just pans the list and may move the active frame out of view.
+  // The active frame only moves via play / scrubber / click, which re-triggers
+  // this effect.
   useEffect(() => {
     const container = thumbnailsContainerRef.current;
     if (!container || frames.length === 0) return;
+
+    // 1. Cancel any active wheel inertia animation
+    thumbnailsInertiaVelocity.current = 0;
+    thumbnailsInertiaIsMoving.current = false;
+    if (thumbnailsInertiaFrameId.current) {
+      cancelAnimationFrame(thumbnailsInertiaFrameId.current);
+      thumbnailsInertiaFrameId.current = null;
+    }
+
+    // 2. Cancel any running alignment animation
+    if (thumbnailsAlignmentFrameId.current) {
+      cancelAnimationFrame(thumbnailsAlignmentFrameId.current);
+      thumbnailsAlignmentFrameId.current = null;
+    }
 
     const children = Array.from(container.children) as HTMLElement[];
     const activeChild = children[currentFrameIndex];
@@ -432,13 +460,32 @@ function App() {
     const styles = window.getComputedStyle(container);
     const rowGap = parseFloat(styles.rowGap || styles.gap || "0") || 0;
     const secondSlotTop = activeChild.offsetHeight + rowGap;
-    const targetTop =
-      container.scrollTop + activeRect.top - containerRect.top - secondSlotTop;
+    const targetTop = Math.max(0, container.scrollTop + activeRect.top - containerRect.top - secondSlotTop);
 
-    container.scrollTo({
-      top: Math.max(0, targetTop),
-      behavior: "smooth",
-    });
+    // 3. Custom Ease-Out Scroll Animation (先快后慢)
+    const easeFactor = 0.16; // Speed coefficient (0.15 - 0.20 is standard ease-out)
+    
+    const animateAlignment = () => {
+      const currentScroll = container.scrollTop;
+      const diff = targetTop - currentScroll;
+
+      if (Math.abs(diff) < 0.5) {
+        container.scrollTop = targetTop;
+        thumbnailsAlignmentFrameId.current = null;
+        return;
+      }
+
+      container.scrollTop = currentScroll + diff * easeFactor;
+      thumbnailsAlignmentFrameId.current = requestAnimationFrame(animateAlignment);
+    };
+
+    thumbnailsAlignmentFrameId.current = requestAnimationFrame(animateAlignment);
+
+    return () => {
+      if (thumbnailsAlignmentFrameId.current) {
+        cancelAnimationFrame(thumbnailsAlignmentFrameId.current);
+      }
+    };
   }, [currentFrameIndex, frames]);
 
   // 2b. Custom smooth wheel scrolling with momentum/inertia for frames list
@@ -446,45 +493,49 @@ function App() {
     const container = thumbnailsContainerRef.current;
     if (!container) return;
 
-    let velocityY = 0;
-    let isMoving = false;
-    let animationFrameId: number | null = null;
     const friction = 0.94; // Decay factor per frame (0.94 is smooth and natural)
     const speedMultiplier = 0.65; // Scale down raw wheel delta for controllable speed
 
     const updateScroll = () => {
-      if (Math.abs(velocityY) < 0.15) {
-        velocityY = 0;
-        isMoving = false;
-        if (animationFrameId) {
-          cancelAnimationFrame(animationFrameId);
-          animationFrameId = null;
+      let vel = thumbnailsInertiaVelocity.current;
+      if (Math.abs(vel) < 0.15) {
+        thumbnailsInertiaVelocity.current = 0;
+        thumbnailsInertiaIsMoving.current = false;
+        if (thumbnailsInertiaFrameId.current) {
+          cancelAnimationFrame(thumbnailsInertiaFrameId.current);
+          thumbnailsInertiaFrameId.current = null;
         }
         return;
       }
 
-      container.scrollTop += velocityY;
-      velocityY *= friction;
+      container.scrollTop += vel;
+      thumbnailsInertiaVelocity.current = vel * friction;
 
-      animationFrameId = requestAnimationFrame(updateScroll);
+      thumbnailsInertiaFrameId.current = requestAnimationFrame(updateScroll);
     };
 
     const handleWheel = (e: WheelEvent) => {
       // Intercept raw wheel events to apply custom inertia physics
       e.preventDefault();
 
+      // Interrupt any active active-frame alignment animation immediately
+      if (thumbnailsAlignmentFrameId.current) {
+        cancelAnimationFrame(thumbnailsAlignmentFrameId.current);
+        thumbnailsAlignmentFrameId.current = null;
+      }
+
       // Accumulate velocity
-      velocityY += e.deltaY * speedMultiplier;
+      thumbnailsInertiaVelocity.current += e.deltaY * speedMultiplier;
 
       // Clamp velocity to prevent extreme scrolling speed
       const maxVelocity = 75;
-      if (velocityY > maxVelocity) velocityY = maxVelocity;
-      if (velocityY < -maxVelocity) velocityY = -maxVelocity;
+      if (thumbnailsInertiaVelocity.current > maxVelocity) thumbnailsInertiaVelocity.current = maxVelocity;
+      if (thumbnailsInertiaVelocity.current < -maxVelocity) thumbnailsInertiaVelocity.current = -maxVelocity;
 
-      if (!isMoving) {
-        isMoving = true;
-        if (animationFrameId) cancelAnimationFrame(animationFrameId);
-        animationFrameId = requestAnimationFrame(updateScroll);
+      if (!thumbnailsInertiaIsMoving.current) {
+        thumbnailsInertiaIsMoving.current = true;
+        if (thumbnailsInertiaFrameId.current) cancelAnimationFrame(thumbnailsInertiaFrameId.current);
+        thumbnailsInertiaFrameId.current = requestAnimationFrame(updateScroll);
       }
     };
 
@@ -492,8 +543,8 @@ function App() {
 
     return () => {
       container.removeEventListener("wheel", handleWheel);
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
+      if (thumbnailsInertiaFrameId.current) {
+        cancelAnimationFrame(thumbnailsInertiaFrameId.current);
       }
     };
   }, [frames]);
