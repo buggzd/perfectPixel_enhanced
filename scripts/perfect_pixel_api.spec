@@ -1,8 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for the Perfect Pixel backend sidecar.
 
-Produces a single self-contained executable (`perfect-pixel-api[-.exe]`) that
-runs the FastAPI/uvicorn server without a Python install on the host.
+Produces an **onedir** bundle (a directory `perfect-pixel-api/` containing the
+executable plus all libs/data), NOT a single onefile executable.
+
+Why onedir: a onefile binary re-extracts its ~60 MB embedded archive to a temp
+dir on *every* launch (10+ seconds of pure I/O before Python even starts).
+onedir ships the libs already expanded, so startup is near-instant (~hundreds
+of ms). Tauri bundles the whole directory via `resources`.
 
 Run from the repo root:
     pyinstaller scripts/perfect_pixel_api.spec \
@@ -52,18 +57,17 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data)
 
+# onedir: EXE holds only the bootloader + scripts; binaries/datas go in COLLECT.
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="perfect-pixel-api",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    runtime_tmpdir=None,
     console=True,  # Tauri spawns this with CREATE_NO_WINDOW on Windows; stdout/stderr go to backend.log
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -71,3 +75,13 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="perfect-pixel-api",
+)
+
