@@ -117,7 +117,7 @@ export function ExportDialog({
 
   // Resolve unique path to avoid overwrite
   const checkAndResolvePath = async (path: string) => {
-    if (!isTauri || !path.trim()) {
+    if (!isTauri || !path.trim() || format === "png_sequence") {
       setPathWarning(null);
       return;
     }
@@ -402,7 +402,7 @@ export function ExportDialog({
     }
 
     let finalPath = outputPath.trim();
-    if (isTauri) {
+    if (isTauri && format !== "png_sequence") {
       try {
         const resolved = await invoke<string>("resolve_unique_path", { path: finalPath });
         if (resolved !== finalPath) {
