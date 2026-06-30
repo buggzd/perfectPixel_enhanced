@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- The PyInstaller sidecar bundles Python.framework and OpenCV dylibs that
+       are ad-hoc signed with a different identity than the host binary. Under
+       the hardened runtime macOS library-validation would reject them ("mapping
+       process and mapped file have different Team IDs"). Disabling library
+       validation lets the bundled Python/opencv load. Safe because the sidecar
+       is bundled by us, not loading arbitrary third-party code. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.network.server</key>
+  <true/>
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>

@@ -36,7 +36,8 @@
       "binaries/perfect-pixel-api"
     ],
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "entitlements": "Entitlements.plist"
     }
   }
 }

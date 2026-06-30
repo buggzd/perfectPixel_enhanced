@@ -101,8 +101,16 @@ fn build_backend_command(
         cmd.args(["-m", "api.run"]);
         Ok((cmd, jobs_dir, logs_dir))
     } else {
-        let resource_dir = app.path().resource_dir()?;
-        let sidecar = resource_dir.join(if cfg!(windows) {
+        // Tauri places `bundle.externalBin` sidecars next to the main
+        // executable (e.g. `Contents/MacOS/perfect-pixel-api` on macOS,
+        // `<appdir>/perfect-pixel-api.exe` on Windows) — NOT in Resources.
+        // Resolve from the running executable's directory so the path is
+        // correct regardless of where the bundle is installed.
+        let exe = std::env::current_exe()?;
+        let exe_dir = exe
+            .parent()
+            .ok_or("could not resolve executable directory")?;
+        let sidecar = exe_dir.join(if cfg!(windows) {
             "perfect-pixel-api.exe"
         } else {
             "perfect-pixel-api"
@@ -214,7 +222,23 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(BackendState::default())
         .setup(|app| {
-            spawn_backend(app)?;
+            // A backend spawn failure must NOT bubble out of setup: doing so
+            // makes Tauri panic inside the Obj-C `applicationDidFinishLaunching`
+            // callback, which can't unwind across the FFI boundary and aborts
+            // the whole app. Record the error in shared state (the frontend
+            // surfaces it) and keep the app alive.
+            if let Err(e) = spawn_backend(app) {
+                let state: tauri::State<BackendState> = app.state();
+                *state.error.lock().unwrap() = Some(format!("{e}"));
+                // Seed a logs dir hint so the "open logs" button works even
+                // though we never got far enough to set it.
+                if state.logs_dir.lock().unwrap().is_none() {
+                    if let Ok(data_dir) = app.path().app_local_data_dir() {
+                        *state.logs_dir.lock().unwrap() =
+                            Some(data_dir.join("logs").to_string_lossy().into_owned());
+                    }
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

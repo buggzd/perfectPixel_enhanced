@@ -45,10 +45,12 @@ OUT="$OUT_DIR/perfect-pixel-api-$TRIPLE"
 cp "$REPO_ROOT/build/sidecar/perfect-pixel-api" "$OUT"
 chmod +x "$OUT"
 
-# Ad-hoc sign the sidecar so macOS accepts it inside the app bundle.
-# Without this the PyInstaller binary is the only unsigned Mach-O in the
-# bundle and Gatekeeper flags the whole app as "damaged". Ad-hoc (-) needs
-# no certificate; the final .app is deep-signed by Tauri (signingIdentity "-").
-codesign --force --sign - "$OUT"
+# Ad-hoc sign the sidecar with the hardened-runtime + an entitlement that
+# disables library validation. Without this, macOS rejects the PyInstaller-
+# bundled Python.framework / opencv dylibs ("mapping process and mapped file
+# have different Team IDs") and the sidecar aborts on launch. The same
+# entitlements file is used by Tauri to deep-sign the final .app.
+ENTITLEMENTS="$REPO_ROOT/frontend/src-tauri/Entitlements.plist"
+codesign --force --sign - --options runtime --entitlements "$ENTITLEMENTS" "$OUT"
 
 echo ">> Sidecar ready: $OUT"
