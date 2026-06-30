@@ -173,3 +173,116 @@ export async function deleteJob(jobId: string): Promise<void> {
     throw new Error(`Failed to delete job ${jobId}`);
   }
 }
+
+// --- Export-related Types and APIs ---
+
+export type ExportFormat = "png_sequence" | "gif" | "sprite_sheet_4x4" | "single_png";
+
+export interface ExportFrameSelection {
+  mode: "all" | "current" | "range" | "indices";
+  start?: number;
+  end?: number;
+  indices?: number[];
+  every_n_frames?: number;
+  target_fps?: number;
+  max_frames?: number;
+  sprite_sampling?: "first_16" | "from_current" | "even_16";
+  insufficient_frames?: "repeat_last" | "transparent" | "error";
+}
+
+export interface ExportSizeOptions {
+  mode: "source" | "scale" | "custom";
+  scale?: number;
+  width?: number;
+  height?: number;
+  keep_aspect?: boolean;
+  fit?: "exact" | "fit";
+  background?: string;
+}
+
+export interface CreateExportRequest {
+  format: ExportFormat;
+  output_path: string;
+  filename_template?: string;
+  index_start?: number;
+  overwrite?: boolean;
+  fps?: number;
+  loop?: boolean;
+  frame_selection: ExportFrameSelection;
+  size: ExportSizeOptions;
+  sprite_pad?: "repeat_last" | "transparent" | "error";
+}
+
+export interface ExportStatusResponse {
+  export_id: string;
+  job_id: string;
+  format: ExportFormat;
+  status: "queued" | "running" | "done" | "error";
+  progress: number;
+  total_items: number;
+  current_item: number;
+  output_path: string;
+  written_files: string[];
+  error: string | null;
+}
+
+export interface JobMetadataResponse {
+  id: string;
+  source_video_name: string;
+  source_fps: number;
+  source_frame_count: number;
+  processed_fps: number;
+  processed_frame_count: number;
+  frame_width: number | null;
+  frame_height: number | null;
+  grid_size: { w: number; h: number } | null;
+}
+
+/**
+ * Gets the video metadata and frame specs for a completed job
+ */
+export async function getJobMetadata(jobId: string): Promise<JobMetadataResponse> {
+  const res = await fetch(`${getBaseUrl()}/api/jobs/${jobId}/metadata`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch metadata for job ${jobId}`);
+  }
+  return res.json();
+}
+
+/**
+ * Initiates an export task for a given job
+ */
+export async function createExport(
+  jobId: string,
+  request: CreateExportRequest
+): Promise<{ export_id: string; status: string }> {
+  const res = await fetch(`${getBaseUrl()}/api/jobs/${jobId}/exports`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to create export task (${res.status})`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Gets the status of an active export task
+ */
+export async function getExportStatus(
+  jobId: string,
+  exportId: string
+): Promise<ExportStatusResponse> {
+  const res = await fetch(`${getBaseUrl()}/api/jobs/${jobId}/exports/${exportId}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch export status for export ${exportId}`);
+  }
+  return res.json();
+}
+

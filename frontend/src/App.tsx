@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import "./App.css";
 import { translations, Language } from "./i18n";
+import { ExportDialog } from "./components/export/ExportDialog";
 
 interface Option<T> {
   value: T;
@@ -187,6 +188,9 @@ function App() {
   
   // App error states
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Export Dialog visibility state
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState<boolean>(false);
 
   // Interval references
   const playIntervalRef = useRef<number | null>(null);
@@ -1251,18 +1255,29 @@ function App() {
                           </div>
                         </div>
 
-                        <a 
-                          href={`${getBaseUrl()}/api/jobs/${currentJobId}/frames/${frames[currentFrameIndex]?.name}`}
-                          download={frames[currentFrameIndex]?.name || "frame.png"}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ textDecoration: "none", color: "inherit" }}
-                        >
-                          <button className="export-btn">
-                            <Download size={16} />
-                            {t.downloadFrame}
+                        <div style={{ display: "flex", gap: "12px" }}>
+                          <button
+                            className="export-btn"
+                            style={{ background: "var(--accent-green)", color: "#121212" }}
+                            onClick={() => setIsExportDialogOpen(true)}
+                          >
+                            <Sparkles size={16} />
+                            {t.exportBtnText}
                           </button>
-                        </a>
+
+                          <a 
+                            href={`${getBaseUrl()}/api/jobs/${currentJobId}/frames/${frames[currentFrameIndex]?.name}`}
+                            download={frames[currentFrameIndex]?.name || "frame.png"}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ textDecoration: "none", color: "inherit" }}
+                          >
+                            <button className="export-btn" style={{ background: "transparent", color: "#fff", border: "1px solid var(--border-color)" }}>
+                              <Download size={16} />
+                              {t.downloadFrame}
+                            </button>
+                          </a>
+                        </div>
                       </div>
                     </>
                   ) : (
@@ -1306,6 +1321,16 @@ function App() {
           )}
         </div>
       </main>
+      {isExportDialogOpen && currentJobId && (
+        <ExportDialog
+          jobId={currentJobId}
+          frames={frames}
+          currentFrameIndex={currentFrameIndex}
+          onClose={() => setIsExportDialogOpen(false)}
+          t={t}
+          lang={lang}
+        />
+      )}
     </div>
   );
 }
