@@ -1302,30 +1302,6 @@ function App() {
                             <span className="info-value">{t.sampleRateValue(everyNFrames)}</span>
                           </div>
                         </div>
-
-                        <div style={{ display: "flex", gap: "12px" }}>
-                          <button
-                            className="export-btn"
-                            style={{ background: "var(--accent-green)", color: "#121212" }}
-                            onClick={() => setIsExportDialogOpen(true)}
-                          >
-                            <Sparkles size={16} />
-                            {t.exportBtnText}
-                          </button>
-
-                          <a 
-                            href={`${getBaseUrl()}/api/jobs/${currentJobId}/frames/${frames[currentFrameIndex]?.name}`}
-                            download={frames[currentFrameIndex]?.name || "frame.png"}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ textDecoration: "none", color: "inherit" }}
-                          >
-                            <button className="export-btn" style={{ background: "transparent", color: "#fff", border: "1px solid var(--border-color)" }}>
-                              <Download size={16} />
-                              {t.downloadFrame}
-                            </button>
-                          </a>
-                        </div>
                       </div>
                     </>
                   ) : (
@@ -1457,6 +1433,31 @@ function App() {
                         );
                       })}
                     </div>
+                  </div>
+
+                  {/* Sidebar Export Actions Panel */}
+                  <div className="sidebar-action-card">
+                    <button
+                      className="export-btn"
+                      style={{ background: "var(--accent-green)", color: "#121212", width: "100%" }}
+                      onClick={() => setIsExportDialogOpen(true)}
+                    >
+                      <Sparkles size={16} />
+                      {t.exportBtnText}
+                    </button>
+
+                    <a 
+                      href={`${getBaseUrl()}/api/jobs/${currentJobId}/frames/${frames[currentFrameIndex]?.name}`}
+                      download={frames[currentFrameIndex]?.name || "frame.png"}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ textDecoration: "none", color: "inherit", width: "100%" }}
+                    >
+                      <button className="export-btn" style={{ background: "transparent", color: "#fff", border: "1px solid var(--border-color)", width: "100%" }}>
+                        <Download size={16} />
+                        {t.downloadFrame}
+                      </button>
+                    </a>
                   </div>
                 </div>
               </div>
