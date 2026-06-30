@@ -525,68 +525,114 @@
   to { transform: translateX(100%); }
 }
 
-/* Visual Indices Frame Picker Selector Grid & Previews */
-.export-indices-preview-row {
+/* /* Split-View Visual Frame Selector Panel */
+.export-custom-picker-panel {
   display: flex;
-  gap: 8px;
+  gap: 16px;
   background: rgba(10, 12, 16, 0.4);
-  padding: 10px;
-  border-radius: 8px;
+  padding: 16px;
+  border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.05);
-  overflow-x: auto;
-  max-width: 100%;
-  scrollbar-width: thin;
+  height: 280px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.export-indices-preview-item {
-  position: relative;
-  width: 50px;
-  height: 50px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.3);
+.export-custom-picker-left {
+  width: 35%;
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.export-picker-preview-viewport {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
   overflow: hidden;
+  position: relative;
 }
 
-.export-indices-preview-item img {
-  max-width: 100%;
-  max-height: 100%;
+.export-picker-preview-viewport img {
+  max-width: 90%;
+  max-height: 90%;
   object-fit: contain;
   image-rendering: pixelated;
 }
 
-.export-indices-preview-item span {
+.picker-preview-label {
   position: absolute;
-  bottom: 1px;
-  right: 2px;
-  background: rgba(0, 0, 0, 0.7);
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.75);
   color: #fff;
-  font-size: 7px;
-  padding: 0 2px;
-  border-radius: 2px;
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.export-indices-selector-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
+.picker-preview-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #8a909e);
+  font-size: 12px;
+}
+
+.export-picker-preview-info {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.export-custom-picker-right {
+  width: 65%;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  background: rgba(10, 12, 16, 0.4);
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  max-height: 220px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
-.export-indices-grid-card {
+.picker-grid-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 4px;
+}
+
+.picker-grid-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.picker-grid-scroll {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.picker-grid-card {
   aspect-ratio: 1;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -596,47 +642,46 @@
   transition: all 0.2s ease;
 }
 
-.export-indices-grid-card:hover {
+.picker-grid-card:hover {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-.export-indices-grid-card.selected {
+.picker-grid-card.selected {
   background: rgba(99, 102, 241, 0.1);
   border-color: var(--accent, #6366f1);
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.25);
 }
 
-.export-indices-grid-card img {
+.picker-grid-card img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
   image-rendering: pixelated;
 }
 
-.export-indices-grid-card .card-idx {
+.picker-grid-card .card-idx {
   position: absolute;
   bottom: 2px;
   right: 4px;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.65);
   color: #fff;
   font-size: 8px;
   padding: 1px 3px;
   border-radius: 3px;
 }
 
-.export-indices-grid-card .card-check-badge {
+.picker-grid-card .card-check-badge {
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 3px;
+  left: 3px;
   color: var(--accent, #6366f1);
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.95);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  width: 13px;
+  height: 13px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
-

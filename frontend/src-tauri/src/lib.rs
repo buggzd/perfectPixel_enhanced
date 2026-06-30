@@ -234,6 +234,56 @@ fn open_path_in_finder(path: String) -> Result<(), String> {
     tauri_plugin_opener::open_path(dir.to_string_lossy().into_owned(), None::<&str>).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn resolve_unique_path(path: String) -> String {
+    let mut p = PathBuf::from(&path);
+    if !p.exists() {
+        return path;
+    }
+    
+    let is_dir = p.is_dir() || path.ends_with('/') || path.ends_with('\\');
+    
+    if is_dir {
+        let mut count = 1;
+        let base_name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let parent = p.parent().unwrap_or(Path::new(""));
+        loop {
+            let new_name = format!("{}_{}", base_name, count);
+            let new_p = parent.join(new_name);
+            if !new_p.exists() {
+                return new_p.to_string_lossy().into_owned();
+            }
+            count += 1;
+        }
+    } else {
+        let parent = p.parent().unwrap_or(Path::new(""));
+        let file_name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        
+        let p_clone = p.clone();
+        let ext = p_clone.extension().unwrap_or_default().to_string_lossy().into_owned();
+        let stem = if !ext.is_empty() {
+            p_clone.file_stem().unwrap_or_default().to_string_lossy().into_owned()
+        } else {
+            file_name.clone()
+        };
+        
+        let mut count = 1;
+        loop {
+            let new_name = if !ext.is_empty() {
+                format!("{}_{}.{}", stem, count, ext)
+            } else {
+                format!("{}_{}", stem, count)
+            };
+            let new_p = parent.join(new_name);
+            if !new_p.exists() {
+                return new_p.to_string_lossy().into_owned();
+            }
+            count += 1;
+        }
+    }
+}
+
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -277,7 +327,8 @@ pub fn run() {
             backend_url,
             backend_status,
             open_logs_dir,
-            open_path_in_finder
+            open_path_in_finder,
+            resolve_unique_path
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

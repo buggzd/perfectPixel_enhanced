@@ -101,12 +101,35 @@ export function ExportDialog({
     loaded: false
   });
 
-  // Export progress and state tracking
   const [stage, setStage] = useState<"idle" | "validating" | "exporting" | "done" | "error">("idle");
   const [progress, setProgress] = useState<number>(0);
   const [writtenFiles, setWrittenFiles] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
+
+  // Split-picker hovered frame state & path warnings
+  const [hoveredFrameIndex, setHoveredFrameIndex] = useState<number | null>(null);
+  const [pathWarning, setPathWarning] = useState<string | null>(null);
+
+  // Resolve unique path to avoid overwrite
+  const checkAndResolvePath = async (path: string) => {
+    if (!isTauri || !path.trim()) {
+      setPathWarning(null);
+      return;
+    }
+    try {
+      const resolved = await invoke<string>("resolve_unique_path", { path: path.trim() });
+      if (resolved !== path.trim()) {
+        setOutputPath(resolved);
+        setPathWarning(`${t.pathExistsWarning}${resolved}`);
+      } else {
+        setPathWarning(null);
+      }
+    } catch (err) {
+      console.error("Resolve path error:", err);
+      setPathWarning(null);
+    }
+  };
 
   // Load metadata on mount
   useEffect(() => {
@@ -207,7 +230,9 @@ export function ExportDialog({
           title: t.selectFolderTitle
         });
         if (selected) {
-          setOutputPath(typeof selected === "string" ? selected : selected[0]);
+          const path = typeof selected === "string" ? selected : selected[0];
+          setOutputPath(path);
+          await checkAndResolvePath(path);
         }
       } else {
         const ext = format === "gif" ? "gif" : "png";
@@ -218,6 +243,7 @@ export function ExportDialog({
         });
         if (selected) {
           setOutputPath(selected);
+          await checkAndResolvePath(selected);
         }
       }
     } catch (err) {
@@ -369,6 +395,21 @@ export function ExportDialog({
       setStage("error");
       return;
     }
+
+    let finalPath = outputPath.trim();
+    if (isTauri) {
+      try {
+        const resolved = await invoke<string>("resolve_unique_path", { path: finalPath });
+        if (resolved !== finalPath) {
+          setOutputPath(resolved);
+          setPathWarning(`${t.pathExistsWarning}${resolved}`);
+          finalPath = resolved;
+        }
+      } catch (err) {
+        console.error("Resolve path on submit error:", err);
+      }
+    }
+
     if (namingValidationError) {
       setErrorMessage(namingValidationError);
       setStage("error");
@@ -455,7 +496,7 @@ export function ExportDialog({
     // Request building
     const request: CreateExportRequest = {
       format,
-      output_path: outputPath,
+      output_path: finalPath,
       overwrite,
       frame_selection,
       size
@@ -647,6 +688,27 @@ export function ExportDialog({
             </div>
           )}
 
+          {pathWarning && (
+            <div className="export-validation-msg" style={{ background: "rgba(251, 191, 36, 0.1)", borderColor: "rgba(251, 191, 36, 0.2)", color: "#fbbf24" }}>
+              <AlertTriangle size={16} />
+              <span>{pathWarning}</span>
+              <button
+                onClick={() => setPathWarning(null)}
+                style={{
+                  marginLeft: "auto",
+                  background: "transparent",
+                  border: "none",
+                  color: "inherit",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  fontWeight: "bold"
+                }}
+              >
+                &times;
+              </button>
+            </div>
+          )}
+
           {/* Output Path Pickers */}
           <div className="export-form-group">
             <label>{t.outputPathLabel}</label>
@@ -657,6 +719,7 @@ export function ExportDialog({
                 placeholder={format === "png_sequence" ? "Select folder path..." : "Select output file path..."}
                 value={outputPath}
                 onChange={(e) => setOutputPath(e.target.value)}
+                onBlur={() => checkAndResolvePath(outputPath)}
               />
               {isTauri && (
                 <button className="export-browse-btn" onClick={handleBrowsePath}>
@@ -807,73 +870,87 @@ export function ExportDialog({
               )}
 
               {rangeMode === "indices" && (
-                <div className="export-form-group" style={{ marginTop: "8px", gap: "10px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>
-                      Selected: {selectedIndices.length} frames
-                    </label>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <button
-                        type="button"
-                        className="export-browse-btn"
-                        style={{ padding: "4px 10px", fontSize: "11px", height: "auto" }}
-                        onClick={() => setSelectedIndices(frames.map(f => f.index))}
-                      >
-                        Select All
-                      </button>
-                      <button
-                        type="button"
-                        className="export-browse-btn"
-                        style={{ padding: "4px 10px", fontSize: "11px", height: "auto" }}
-                        onClick={() => setSelectedIndices([])}
-                      >
-                        Clear All
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Real-time horizontal preview list of selected frames */}
-                  {selectedIndices.length > 0 && (
-                    <div className="export-indices-preview-row">
-                      {[...selectedIndices].sort((a, b) => a - b).map(idx => {
-                        const frame = frames.find(f => f.index === idx) || frames[idx];
-                        if (!frame) return null;
-                        return (
-                          <div key={idx} className="export-indices-preview-item" title={`Frame #${idx}`}>
-                            <img src={getFrameUrl(jobId, frame.name)} alt="" />
-                            <span>#{idx}</span>
+                <div className="export-form-group" style={{ marginTop: "8px" }}>
+                  <div className="export-custom-picker-panel">
+                    {/* Left Pane: Preview Viewport */}
+                    <div className="export-custom-picker-left">
+                      <div className="export-picker-preview-viewport">
+                        {hoveredFrameIndex !== null ? (
+                          <>
+                            <img src={getFrameUrl(jobId, frames.find(f => f.index === hoveredFrameIndex)?.name || frames[hoveredFrameIndex]?.name || "")} alt="" />
+                            <div className="picker-preview-label">Frame #{hoveredFrameIndex}</div>
+                          </>
+                        ) : selectedIndices.length > 0 ? (
+                          <>
+                            <img src={getFrameUrl(jobId, frames.find(f => f.index === selectedIndices[0])?.name || frames[selectedIndices[0]]?.name || "")} alt="" />
+                            <div className="picker-preview-label">Frame #{selectedIndices[0]} (First Selected)</div>
+                          </>
+                        ) : (
+                          <div className="picker-preview-empty">
+                            <ImageIcon size={24} style={{ opacity: 0.3, marginBottom: 8 }} />
+                            <span>No frames selected</span>
                           </div>
-                        );
-                      })}
+                        )}
+                      </div>
+                      <div className="export-picker-preview-info">
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                          Selected: <strong>{selectedIndices.length}</strong> / {frames.length}
+                        </span>
+                      </div>
                     </div>
-                  )}
 
-                  {/* Visual Grid Selector of all available frames */}
-                  <div className="export-indices-selector-grid">
-                    {frames.map((frame) => {
-                      const isSelected = selectedIndices.includes(frame.index);
-                      return (
-                        <div
-                          key={frame.name}
-                          className={`export-indices-grid-card ${isSelected ? "selected" : ""}`}
-                          onClick={() => {
-                            if (isSelected) {
-                              setSelectedIndices(prev => prev.filter(i => i !== frame.index));
-                            } else {
-                              setSelectedIndices(prev => [...prev, frame.index]);
-                            }
-                          }}
-                        >
-                          <img src={getFrameUrl(jobId, frame.name)} alt="" loading="lazy" />
-                          <span className="card-idx">#{frame.index}</span>
-                          {isSelected && (
-                            <div className="card-check-badge">
-                              <CheckCircle2 size={12} />
-                            </div>
-                          )}
+                    {/* Right Pane: Grid Selector with Actions */}
+                    <div className="export-custom-picker-right">
+                      <div className="picker-grid-header">
+                        <span style={{ fontSize: "12px", fontWeight: "600" }}>Frame Selector</span>
+                        <div className="picker-grid-actions">
+                          <button
+                            type="button"
+                            className="export-browse-btn"
+                            style={{ padding: "2px 8px", fontSize: "11px", height: "auto" }}
+                            onClick={() => setSelectedIndices(frames.map(f => f.index))}
+                          >
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            className="export-browse-btn"
+                            style={{ padding: "2px 8px", fontSize: "11px", height: "auto" }}
+                            onClick={() => setSelectedIndices([])}
+                          >
+                            Clear All
+                          </button>
                         </div>
-                      );
-                    })}
+                      </div>
+                      <div className="picker-grid-scroll">
+                        {frames.map((frame) => {
+                          const isSelected = selectedIndices.includes(frame.index);
+                          return (
+                            <div
+                              key={frame.name}
+                              className={`picker-grid-card ${isSelected ? "selected" : ""}`}
+                              onMouseEnter={() => setHoveredFrameIndex(frame.index)}
+                              onMouseLeave={() => setHoveredFrameIndex(null)}
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedIndices(prev => prev.filter(i => i !== frame.index));
+                                } else {
+                                  setSelectedIndices(prev => [...prev, frame.index]);
+                                }
+                              }}
+                            >
+                              <img src={getFrameUrl(jobId, frame.name)} alt="" loading="lazy" />
+                              <span className="card-idx">#{frame.index}</span>
+                              {isSelected && (
+                                <div className="card-check-badge">
+                                  <CheckCircle2 size={10} />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
