@@ -53,6 +53,9 @@ python -m api.run            # 监听 127.0.0.1:8765（默认端口）
 | GET | `/api/jobs/{job_id}/frames` | 列出输出帧 |
 | GET | `/api/jobs/{job_id}/frames/{name}` | 下载单帧 PNG |
 | DELETE | `/api/jobs/{job_id}` | 取消任务并清理工作目录 |
+| GET | `/api/jobs/{job_id}/metadata` | 获取源/处理帧元信息（帧率、帧数、尺寸） |
+| POST | `/api/jobs/{job_id}/exports` | 创建导出任务（PNG 序列/GIF/4×4 图集/单帧） |
+| GET | `/api/jobs/{job_id}/exports/{export_id}` | 查询导出任务状态/进度 |
 
 ---
 
@@ -193,6 +196,104 @@ python -m api.run            # 监听 127.0.0.1:8765（默认端口）
 ```
 
 > 注意：取消是协作式的——正在处理当前帧的逻辑会在下一次进度回调时抛出并退出；已写出的帧会随目录一并删除。
+
+---
+
+## 7. 获取元信息
+
+`GET /api/jobs/{job_id}/metadata`
+
+返回源视频与处理帧的元信息，供前端展示“原视频帧率”“处理后帧数”“默认导出尺寸”和 GIF 时长。
+
+**响应** `200`
+```json
+{
+  "id": "9f3c1a2b7e8d4c60",
+  "source_video_name": "walk_cycle",
+  "source_fps": 30.0,
+  "source_frame_count": 240,
+  "processed_fps": 15.0,
+  "processed_frame_count": 120,
+  "frame_width": 128,
+  "frame_height": 128,
+  "grid_size": { "w": 64, "h": 64 },
+  "status": "done"
+}
+```
+
+> `processed_fps = source_fps / every_n_frames`。源 fps 无法读取时为 `0`，`grid_size` 在网格检测失败时为 `null`。
+
+---
+
+## 8. 创建导出任务
+
+`POST /api/jobs/{job_id}/exports`（`application/json`）
+
+任务必须处于 `done` 状态，且同一 job 同时只允许一个导出任务运行（`409`）。导出在后台线程执行，立即返回 `export_id`；参数非法返回 `400`。
+
+**请求体**
+```json
+{
+  "format": "png_sequence",
+  "output_path": "/Users/user/Desktop/walk",
+  "filename_template": "{project}_{index:04}",
+  "index_start": 0,
+  "overwrite": false,
+  "fps": 12,
+  "loop": true,
+  "frame_selection": { "mode": "all", "every_n_frames": 1 },
+  "size": { "mode": "source" },
+  "sprite_pad": "repeat_last"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `format` | string | 是 | `png_sequence` / `gif` / `sprite_sheet_4x4` / `single_png` |
+| `output_path` | string | 是 | 序列帧为目录；GIF/图集/单帧为文件路径（绝对路径） |
+| `filename_template` | string | png_sequence 必填 | 命名模板，必须含 `{index}` 或 `{source_index}` |
+| `index_start` | int | 否 | 序号起始，默认 0 |
+| `overwrite` | bool | 否 | 覆盖已存在文件，默认 false |
+| `fps` | float | 否 | GIF 帧率（默认 12，范围 [1,60]）；序列帧写入 manifest |
+| `loop` | bool | 否 | GIF 是否循环，默认 true |
+| `frame_selection` | object | 是 | 帧选择（见下） |
+| `size` | object | 是 | 尺寸规则（见下） |
+| `sprite_pad` | string | 否 | 图集不足 16 帧：`repeat_last`(默认)/`transparent`/`error` |
+
+`frame_selection` 支持 `mode`：`all` / `range`(start,end 含端) / `indices` / `current`(start)。可选 `every_n_frames`、`target_fps`、`max_frames`。筛选顺序：mode → every_n → target_fps 时间轴重采样 → max_frames →（图集）16 帧规则。
+
+`size` 支持 `mode`：`source` / `scale`(整数倍 [1,32]) / `custom`(width,height,keep_aspect,fit=fit|exact,background)。所有缩放使用最近邻；`custom`+`fit`+透明背景输出 BGRA。
+
+**响应** `200`
+```json
+{ "export_id": "e7b1c92a", "status": "queued" }
+```
+
+**错误**：`400` 参数非法/帧范围为空/模板非法；`404` job 不存在；`409` job 未完成或已有导出运行中。
+
+---
+
+## 9. 查询导出任务
+
+`GET /api/jobs/{job_id}/exports/{export_id}`
+
+**响应** `200`
+```json
+{
+  "export_id": "e7b1c92a",
+  "job_id": "9f3c1a2b7e8d4c60",
+  "format": "png_sequence",
+  "status": "running",
+  "progress": 0.42,
+  "total_items": 120,
+  "current_item": 50,
+  "output_path": "/Users/user/Desktop/walk",
+  "written_files": ["/Users/user/Desktop/walk/walk_0000.png"],
+  "error": null
+}
+```
+
+状态机：`queued → running → done | error`。`404` 表示 job 或 export 不存在。打开导出位置由 Tauri 前端用 `output_path` 完成，后端不提供下载 URL。
 
 ---
 

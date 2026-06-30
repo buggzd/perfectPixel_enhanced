@@ -10,13 +10,15 @@ Run:
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Dict, Optional
 
 # Make ``src`` importable when the server is run from the repo root without an
 # editable install of the perfect_pixel package.
@@ -25,10 +27,20 @@ _SRC_DIR = os.path.join(_REPO_ROOT, "src")
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+import cv2  # noqa: E402
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
+from pydantic import BaseModel  # noqa: E402
 
+from perfect_pixel.exporting import (  # noqa: E402
+    ExportError,
+    VALID_EXPORT_FORMATS,
+    export_gif,
+    export_png_sequence,
+    export_single_png,
+    export_sprite_sheet_4x4,
+)
 from perfect_pixel.video import process_video  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -64,6 +76,15 @@ class Job:
     error: Optional[str] = None
     cancel_flag: threading.Event = field(default_factory=threading.Event)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    # --- source / processed metadata (for export sizing & fps) ---
+    source_video_name: str = ""
+    source_fps: float = 0.0
+    source_frame_count: int = 0
+    processed_fps: float = 0.0
+    frame_width: Optional[int] = None
+    frame_height: Optional[int] = None
+    # --- export tasks keyed by export_id ---
+    exports: Dict[str, "ExportJob"] = field(default_factory=dict)
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -75,6 +96,37 @@ class Job:
                 "current_frame": self.current_frame,
                 "grid_size": self.grid_size,
                 "output_frames": list(self.output_frames),
+                "error": self.error,
+            }
+
+
+@dataclass
+class ExportJob:
+    export_id: str
+    job_id: str
+    format: str
+    output_path: str
+    status: str = "queued"          # queued | running | done | error
+    progress: float = 0.0           # 0..1
+    total_items: int = 0
+    current_item: int = 0
+    written_files: list = field(default_factory=list)
+    error: Optional[str] = None
+    created_at: float = field(default_factory=time.time)
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return {
+                "export_id": self.export_id,
+                "job_id": self.job_id,
+                "format": self.format,
+                "status": self.status,
+                "progress": round(self.progress, 4),
+                "total_items": self.total_items,
+                "current_item": self.current_item,
+                "output_path": self.output_path,
+                "written_files": list(self.written_files),
                 "error": self.error,
             }
 
@@ -158,6 +210,13 @@ def _run_job(
             job.current_frame = result["total_frames"]
             job.progress = 1.0
             job.status = "done"
+            # Record processed frame dimensions for export sizing, read from
+            # the first written frame (all output frames share dimensions).
+            if result["output_frames"]:
+                first = os.path.join(job.frames_dir, result["output_frames"][0])
+                img = cv2.imread(first, cv2.IMREAD_COLOR)
+                if img is not None:
+                    job.frame_height, job.frame_width = img.shape[:2]
 
     except Exception as exc:  # noqa: BLE001
         with job._lock:
@@ -243,6 +302,19 @@ async def create_job(
         shutil.copyfileobj(video.file, fh)
 
     job = Job(job_id=job_id, work_dir=work_dir, frames_dir=frames_dir)
+    job.source_video_name = os.path.splitext(video.filename or "input")[0]
+    # Probe source fps / frame count for export time-axis resampling & metadata.
+    cap = cv2.VideoCapture(video_path)
+    if cap.isOpened():
+        sf = cap.get(cv2.CAP_PROP_FPS)
+        sc = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        if sf and sf > 0:
+            job.source_fps = float(sf)
+        if sc and sc > 0:
+            job.source_frame_count = int(sc)
+        cap.release()
+    job.processed_fps = (job.source_fps / every_n_frames) if job.source_fps else 0.0
+
     with _jobs_lock:
         _jobs[job_id] = job
 
@@ -326,3 +398,213 @@ def _startup():  # pragma: no cover
     if os.path.isdir(JOBS_DIR):
         for name in os.listdir(JOBS_DIR):
             shutil.rmtree(os.path.join(JOBS_DIR, name), ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Export jobs
+# ---------------------------------------------------------------------------
+
+class ExportRequest(BaseModel):
+    format: str
+    output_path: str
+    filename_template: Optional[str] = None
+    index_start: int = 0
+    overwrite: bool = False
+    fps: Optional[float] = None
+    loop: bool = True
+    frame_selection: Dict[str, Any]
+    size: Dict[str, Any]
+    sprite_pad: str = "repeat_last"
+
+
+def _get_export(job: Job, export_id: str) -> ExportJob:
+    exp = job.exports.get(export_id)
+    if exp is None:
+        raise HTTPException(status_code=404, detail=f"Export not found: {export_id}")
+    return exp
+
+
+def _running_exports(job: Job) -> Optional[ExportJob]:
+    for exp in job.exports.values():
+        if exp.status in ("queued", "running"):
+            return exp
+    return None
+
+
+def _run_export(job: Job, exp: ExportJob, req: ExportRequest) -> None:
+    """Background worker: dispatch to the right exporter and update state."""
+    def on_progress(current: int, total: int) -> None:
+        with exp._lock:
+            exp.current_item = current
+            exp.total_items = total
+            if total > 0:
+                exp.progress = current / total
+
+    try:
+        with exp._lock:
+            exp.status = "running"
+
+        common = dict(
+            frames_dir=job.frames_dir,
+            output_frames=job.output_frames,
+            output_path=req.output_path,
+            overwrite=req.overwrite,
+            frame_selection=req.frame_selection,
+            processed_fps=job.processed_fps or None,
+            size=req.size,
+            on_progress=on_progress,
+        )
+        project = job.source_video_name or job.job_id
+        source = job.source_video_name or "source"
+
+        if req.format == "png_sequence":
+            result = export_png_sequence(
+                **common,
+                filename_template=req.filename_template or "{project}_{index:04}",
+                index_start=req.index_start,
+                fps=req.fps,
+                project_name=project,
+                source_name=source,
+            )
+        elif req.format == "gif":
+            fps = req.fps if req.fps is not None else 12.0
+            result = export_gif(
+                **common, fps=fps, loop=req.loop,
+            )
+        elif req.format == "sprite_sheet_4x4":
+            result = export_sprite_sheet_4x4(
+                **common,
+                fps=req.fps,
+                pad_mode=req.sprite_pad,
+                project_name=project,
+                source_name=source,
+            )
+        else:  # single_png
+            result = export_single_png(**common)
+
+        with exp._lock:
+            exp.written_files = list(result.get("written_files", []))
+            exp.progress = 1.0
+            exp.current_item = exp.total_items or exp.current_item
+            exp.status = "done"
+    except ExportError as exc:
+        with exp._lock:
+            exp.status = "error"
+            exp.error = str(exc)
+    except Exception as exc:  # noqa: BLE001
+        with exp._lock:
+            exp.status = "error"
+            exp.error = f"export failed: {exc}"
+
+
+@app.get("/api/jobs/{job_id}/metadata")
+def get_job_metadata(job_id: str):
+    job = _get_job(job_id)
+    with job._lock:
+        grid = job.grid_size
+        return {
+            "id": job.job_id,
+            "source_video_name": job.source_video_name,
+            "source_fps": job.source_fps,
+            "source_frame_count": job.source_frame_count,
+            "processed_fps": job.processed_fps,
+            "processed_frame_count": len(job.output_frames),
+            "frame_width": job.frame_width,
+            "frame_height": job.frame_height,
+            "grid_size": {"w": grid["w"], "h": grid["h"]} if grid else None,
+            "status": job.status,
+        }
+
+
+@app.post("/api/jobs/{job_id}/exports")
+def create_export(job_id: str, req: ExportRequest):
+    job = _get_job(job_id)
+
+    # Validate up front → 400 for bad params.
+    if req.format not in VALID_EXPORT_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"format must be one of {sorted(VALID_EXPORT_FORMATS)}",
+        )
+    if not req.output_path or not req.output_path.strip():
+        raise HTTPException(status_code=400, detail="output_path must not be empty")
+
+    with job._lock:
+        if job.status != "done":
+            raise HTTPException(
+                status_code=409,
+                detail=f"job must be done before exporting (status={job.status})",
+            )
+        if not job.output_frames:
+            raise HTTPException(status_code=409, detail="job has no processed frames")
+        running = _running_exports(job)
+
+    if running is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"an export is already running on this job: {running.export_id}",
+        )
+
+    if req.format == "png_sequence" and not req.filename_template:
+        raise HTTPException(
+            status_code=400, detail="filename_template is required for png_sequence"
+        )
+    if req.format == "gif" and req.fps is not None and not (1.0 <= req.fps <= 60.0):
+        raise HTTPException(status_code=400, detail="fps must be in [1, 60]")
+
+    # Synchronous pre-validation of the spec so bad params return 400 instead of
+    # surfacing as an async error status after the worker starts.
+    try:
+        from perfect_pixel.exporting import (
+            compute_export_size,
+            select_frames,
+            validate_filename_template,
+        )
+        if req.format == "png_sequence":
+            validate_filename_template(req.filename_template)  # type: ignore[arg-type]
+        if req.format == "single_png":
+            sel = select_frames(
+                req.frame_selection,
+                total_frames=len(job.output_frames),
+                processed_fps=job.processed_fps or None,
+            )
+            if len(sel) != 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail="single_png requires exactly one selected frame",
+                )
+        else:
+            select_frames(
+                req.frame_selection,
+                total_frames=len(job.output_frames),
+                processed_fps=job.processed_fps or None,
+            )
+        if job.frame_width and job.frame_height:
+            compute_export_size(req.size, job.frame_width, job.frame_height)
+    except HTTPException:
+        raise
+    except ExportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    export_id = uuid.uuid4().hex[:8]
+    exp = ExportJob(
+        export_id=export_id,
+        job_id=job_id,
+        format=req.format,
+        output_path=req.output_path,
+    )
+    with job._lock:
+        job.exports[export_id] = exp
+
+    thread = threading.Thread(
+        target=_run_export, args=(job, exp, req), daemon=True
+    )
+    thread.start()
+
+    return {"export_id": export_id, "status": exp.status}
+
+
+@app.get("/api/jobs/{job_id}/exports/{export_id}")
+def get_export(job_id: str, export_id: str):
+    job = _get_job(job_id)
+    return _get_export(job, export_id).snapshot()
