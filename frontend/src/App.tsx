@@ -236,6 +236,25 @@ function App() {
     };
   }, []);
 
+  // Suppress the webview's default file-drop behaviour at the window level.
+  // The dropzone has its own handlers, but a drop that misses it would
+  // otherwise make the webview navigate to the file URL (e.g. play a dropped
+  // video like a browser). Capture phase + preventDefault kills that default
+  // everywhere without affecting the dropzone's React onDrop (preventDefault
+  // does not stop other listeners or block reading dataTransfer.files).
+  useEffect(() => {
+    const killDefault = (e: DragEvent) => {
+      e.preventDefault();
+    };
+    const opts: AddEventListenerOptions = { capture: true };
+    window.addEventListener("dragover", killDefault, opts);
+    window.addEventListener("drop", killDefault, opts);
+    return () => {
+      window.removeEventListener("dragover", killDefault, opts);
+      window.removeEventListener("drop", killDefault, opts);
+    };
+  }, []);
+
   // 1. Health check — only once the backend URL is known; then poll every 3s.
   const verifyBackendHealth = async () => {
     setIsCheckingConnection(true);
