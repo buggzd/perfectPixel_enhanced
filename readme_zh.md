@@ -75,6 +75,15 @@ bash scripts/build_app.sh
 ```
 该脚本会首先通过 PyInstaller 编译后端 sidecar 可执行程序并拷贝至 `frontend/src-tauri/binaries/`，随后执行 Tauri 打包。
 
+#### 安装与首次打开（macOS）
+`.dmg` 是标准的拖拽式安装包：打开后把 **Perfect Pixel.app** 拖入 **Applications** 文件夹快捷方式即可。（隐藏的 `.VolumeIcon.icns` 只是 dmg 卷图标，属正常现象。）
+
+Release 构建为 **ad-hoc 签名但未公证**（无 Apple Developer 证书），首次打开 macOS 会提示"无法验证开发者"。打开方式：
+- **右键点击** App → **打开** → **仍要打开**；或
+- 在终端执行 `xattr -dr com.apple.quarantine "/Applications/Perfect Pixel.app"`（移除下载隔离标志）。
+
+首次打开后不会再提示。
+
 ---
 
 ## 🔌 ComfyUI 自定义节点

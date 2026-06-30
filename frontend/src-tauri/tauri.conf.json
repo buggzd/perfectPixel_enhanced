@@ -34,6 +34,9 @@
     ],
     "externalBin": [
       "binaries/perfect-pixel-api"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
   }
 }

@@ -45,4 +45,10 @@ OUT="$OUT_DIR/perfect-pixel-api-$TRIPLE"
 cp "$REPO_ROOT/build/sidecar/perfect-pixel-api" "$OUT"
 chmod +x "$OUT"
 
+# Ad-hoc sign the sidecar so macOS accepts it inside the app bundle.
+# Without this the PyInstaller binary is the only unsigned Mach-O in the
+# bundle and Gatekeeper flags the whole app as "damaged". Ad-hoc (-) needs
+# no certificate; the final .app is deep-signed by Tauri (signingIdentity "-").
+codesign --force --sign - "$OUT"
+
 echo ">> Sidecar ready: $OUT"

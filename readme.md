@@ -77,6 +77,15 @@ bash scripts/build_app.sh
 ```
 This runs the PyInstaller sidecar builder first, copying target binaries under `frontend/src-tauri/binaries/`, and compiles the Tauri bundle.
 
+#### Installing & first launch (macOS)
+The `.dmg` is a standard drag-and-drop installer: open it and drag **Perfect Pixel.app** into the **Applications** folder shortcut. (The hidden `.VolumeIcon.icns` is just the volume icon — normal.)
+
+The release builds are **ad-hoc signed but not notarized** (no Apple Developer certificate), so on first launch macOS Gatekeeper will say it "cannot be verified." To open it:
+- **Right-click** the app → **Open** → **Open anyway**; or
+- Run `xattr -dr com.apple.quarantine "/Applications/Perfect Pixel.app"` in Terminal (removes the download quarantine flag).
+
+After the first launch the prompt won't reappear.
+
 ---
 
 ## 🔌 ComfyUI Custom Node
