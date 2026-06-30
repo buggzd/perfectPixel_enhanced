@@ -440,6 +440,63 @@ function App() {
     });
   }, [currentFrameIndex, frames]);
 
+  // 2b. Custom smooth wheel scrolling with momentum/inertia for frames list
+  useEffect(() => {
+    const container = thumbnailsContainerRef.current;
+    if (!container) return;
+
+    let velocityY = 0;
+    let isMoving = false;
+    let animationFrameId: number | null = null;
+    const friction = 0.94; // Decay factor per frame (0.94 is smooth and natural)
+    const speedMultiplier = 0.65; // Scale down raw wheel delta for controllable speed
+
+    const updateScroll = () => {
+      if (Math.abs(velocityY) < 0.15) {
+        velocityY = 0;
+        isMoving = false;
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+          animationFrameId = null;
+        }
+        return;
+      }
+
+      container.scrollTop += velocityY;
+      velocityY *= friction;
+
+      animationFrameId = requestAnimationFrame(updateScroll);
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      // Intercept raw wheel events to apply custom inertia physics
+      e.preventDefault();
+
+      // Accumulate velocity
+      velocityY += e.deltaY * speedMultiplier;
+
+      // Clamp velocity to prevent extreme scrolling speed
+      const maxVelocity = 75;
+      if (velocityY > maxVelocity) velocityY = maxVelocity;
+      if (velocityY < -maxVelocity) velocityY = -maxVelocity;
+
+      if (!isMoving) {
+        isMoving = true;
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+        animationFrameId = requestAnimationFrame(updateScroll);
+      }
+    };
+
+    container.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener("wheel", handleWheel);
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [frames]);
+
   // Drag and drop handlers
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
