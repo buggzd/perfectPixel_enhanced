@@ -604,7 +604,7 @@ function App() {
         cancelAnimationFrame(animationFrameId);
       }
     };
-  }, []);
+  }, [bootState]);
 
   // Drag and drop handlers
   const handleDrag = (e: React.DragEvent) => {
