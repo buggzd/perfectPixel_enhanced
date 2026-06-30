@@ -185,6 +185,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [playbackFps, setPlaybackFps] = useState<number>(15);
   const [loopPlayback] = useState<boolean>(true);
+  const [selectedFrames, setSelectedFrames] = useState<number[]>([]);
   
   // App error states
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -282,15 +283,33 @@ function App() {
     if (isPlaying && frames.length > 0) {
       playIntervalRef.current = window.setInterval(() => {
         setCurrentFrameIndex((prevIndex) => {
-          if (prevIndex >= frames.length - 1) {
-            if (loopPlayback) {
-              return 0;
+          if (selectedFrames.length > 0) {
+            const sortedSelected = [...selectedFrames].sort((a, b) => a - b);
+            const curIdx = sortedSelected.indexOf(prevIndex);
+            if (curIdx === -1) {
+              const nextLarger = sortedSelected.find(idx => idx >= prevIndex);
+              return nextLarger !== undefined ? nextLarger : sortedSelected[0];
+            } else if (curIdx >= sortedSelected.length - 1) {
+              if (loopPlayback) {
+                return sortedSelected[0];
+              } else {
+                setIsPlaying(false);
+                return prevIndex;
+              }
             } else {
-              setIsPlaying(false);
-              return prevIndex;
+              return sortedSelected[curIdx + 1];
             }
+          } else {
+            if (prevIndex >= frames.length - 1) {
+              if (loopPlayback) {
+                return 0;
+              } else {
+                setIsPlaying(false);
+                return prevIndex;
+              }
+            }
+            return prevIndex + 1;
           }
-          return prevIndex + 1;
         });
       }, 1000 / playbackFps);
     } else {
@@ -305,7 +324,7 @@ function App() {
         clearInterval(playIntervalRef.current);
       }
     };
-  }, [isPlaying, frames, playbackFps, loopPlayback]);
+  }, [isPlaying, frames, playbackFps, loopPlayback, selectedFrames]);
 
   // 3. Status Poll effect
   useEffect(() => {
@@ -499,6 +518,7 @@ function App() {
     setIsSubmitting(true);
     setErrorMsg(null);
     setFrames([]);
+    setSelectedFrames([]);
     setCurrentFrameIndex(0);
     setIsPlaying(false);
 
@@ -544,6 +564,7 @@ function App() {
       setCurrentJobId(null);
       setJobStatus(null);
       setFrames([]);
+      setSelectedFrames([]);
       setCurrentFrameIndex(0);
       setIsPlaying(false);
       setErrorMsg(null);
@@ -1291,28 +1312,71 @@ function App() {
                 <div className="player-sidebar">
                   {/* Frame Sequence Thumbnails Column */}
                   <div className="thumbnails-container">
-                    <div className="thumbnails-header">
-                      <span className="info-title">{t.frameListPng}</span>
-                      <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{t.clickToJump}</span>
+                    <div className="thumbnails-header" style={{ flexDirection: "column", gap: "6px", alignItems: "stretch" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span className="info-title">{t.frameListPng}</span>
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                          Selected: {selectedFrames.length}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px", marginTop: "2px" }}>
+                        <button
+                          type="button"
+                          className="thumbnails-action-btn"
+                          style={{ flex: 1, textAlign: "center" }}
+                          onClick={() => setSelectedFrames(frames.map(f => f.index))}
+                        >
+                          {t.selectAll}
+                        </button>
+                        <button
+                          type="button"
+                          className="thumbnails-action-btn"
+                          style={{ flex: 1, textAlign: "center" }}
+                          onClick={() => setSelectedFrames([])}
+                        >
+                          {t.clearAll}
+                        </button>
+                      </div>
                     </div>
                     <div 
                       ref={thumbnailsContainerRef}
                       className="thumbnails-grid"
                       onScroll={handleThumbnailsScroll}
                     >
-                      {frames.map((frame, index) => (
-                        <div 
-                          key={frame.name}
-                          className={`thumbnail-card ${index === currentFrameIndex ? "active" : ""}`}
-                          onClick={() => {
-                            setIsPlaying(false);
-                            setCurrentFrameIndex(index);
-                          }}
-                        >
-                          <img src={getFrameUrl(currentJobId, frame.name)} alt="" loading="lazy" />
-                          <span className="thumb-idx">#{frame.index}</span>
-                        </div>
-                      ))}
+                      {frames.map((frame, index) => {
+                        const isSelected = selectedFrames.includes(frame.index);
+                        return (
+                          <div 
+                            key={frame.name}
+                            className={`thumbnail-card ${index === currentFrameIndex ? "active" : ""} ${isSelected ? "selected" : ""}`}
+                            style={{ position: "relative", cursor: "pointer" }}
+                            onClick={(e) => {
+                              const target = e.target as HTMLElement;
+                              if (target.closest(".thumb-select-box")) {
+                                return;
+                              }
+                              setIsPlaying(false);
+                              setCurrentFrameIndex(index);
+                            }}
+                          >
+                            <img src={getFrameUrl(currentJobId, frame.name)} alt="" loading="lazy" />
+                            <span className="thumb-idx">#{frame.index}</span>
+                            <div 
+                              className={`thumb-select-box ${isSelected ? "checked" : ""}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isSelected) {
+                                  setSelectedFrames(prev => prev.filter(i => i !== frame.index));
+                                } else {
+                                  setSelectedFrames(prev => [...prev, frame.index]);
+                                }
+                              }}
+                            >
+                              <CheckCircle2 size={12} />
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -1326,6 +1390,7 @@ function App() {
           jobId={currentJobId}
           frames={frames}
           currentFrameIndex={currentFrameIndex}
+          selectedFrames={selectedFrames}
           onClose={() => setIsExportDialogOpen(false)}
           t={t}
           lang={lang}

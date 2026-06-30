@@ -1231,6 +1231,62 @@ input:checked + .toggle-slider:before {
   border-radius: 2px;
 }
 
+/* Sidebar Thumbnail Select Overlay Styles */
+.thumb-select-box {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  transition: all 0.15s ease;
+  z-index: 10;
+}
+
+.thumbnail-card:hover .thumb-select-box {
+  color: rgba(255, 255, 255, 0.8);
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+.thumb-select-box.checked {
+  color: #121212 !important;
+  border-color: var(--accent-green) !important;
+  background: var(--accent-green) !important;
+}
+
+.thumbnail-card.selected {
+  border-color: rgba(30, 215, 96, 0.4);
+  opacity: 0.8;
+}
+
+.thumbnail-card.selected.active {
+  border-color: var(--accent-green);
+  opacity: 1;
+}
+
+.thumbnails-action-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.thumbnails-action-btn:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+}
+
 /* Spinner Loader */
 .spinner {
   border: 2px solid rgba(255, 255, 255, 0.1);

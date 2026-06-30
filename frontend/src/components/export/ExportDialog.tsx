@@ -29,6 +29,7 @@ interface ExportDialogProps {
   jobId: string;
   frames: FrameInfo[];
   currentFrameIndex: number;
+  selectedFrames?: number[];
   onClose: () => void;
   t: any; // Translation strings
   lang: string;
@@ -47,8 +48,10 @@ export function ExportDialog({
   jobId,
   frames,
   currentFrameIndex,
+  selectedFrames = [],
   onClose,
-  t
+  t,
+  lang
 }: ExportDialogProps) {
   const isTauri = "__TAURI_INTERNALS__" in window;
 
@@ -68,14 +71,16 @@ export function ExportDialog({
   const [loop, setLoop] = useState<boolean>(true);
 
   // Frame Range selection
-  const [rangeMode, setRangeMode] = useState<"all" | "current" | "range" | "indices">("all");
+  const [rangeMode, setRangeMode] = useState<"all" | "current" | "range" | "indices">(() => {
+    return selectedFrames.length > 0 ? "indices" : "all";
+  });
   const [startFrame, setStartFrame] = useState<number>(0);
   const [endFrame, setEndFrame] = useState<number>(frames.length - 1);
   const [everyNFrames, setEveryNFrames] = useState<number>(1);
   const [targetFps, setTargetFps] = useState<string>("");
   const [maxFrames, setMaxFrames] = useState<string>("");
-  const [selectedIndices, setSelectedIndices] = useState<number[]>(() => {
-    return [currentFrameIndex];
+  const [selectedIndices] = useState<number[]>(() => {
+    return selectedFrames.length > 0 ? selectedFrames : [currentFrameIndex];
   });
 
   // 4x4 Sprite Sheet details
@@ -107,8 +112,7 @@ export function ExportDialog({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const pollIntervalRef = useRef<number | null>(null);
 
-  // Split-picker hovered frame state & path warnings
-  const [hoveredFrameIndex, setHoveredFrameIndex] = useState<number | null>(null);
+  // Path warnings
   const [pathWarning, setPathWarning] = useState<string | null>(null);
 
   // Resolve unique path to avoid overwrite
@@ -420,34 +424,45 @@ export function ExportDialog({
     setErrorMessage(null);
 
     // Frame selection building
+    const getActiveIndices = (): number[] => {
+      if (rangeMode === "indices") {
+        return [...selectedIndices].sort((a, b) => a - b);
+      } else if (rangeMode === "current") {
+        return [currentFrameIndex];
+      } else if (rangeMode === "range") {
+        const idxs: number[] = [];
+        const s = Math.min(startFrame, endFrame);
+        const e = Math.max(startFrame, endFrame);
+        for (let i = s; i <= e; i++) {
+          idxs.push(i);
+        }
+        return idxs;
+      } else {
+        return frames.map(f => f.index);
+      }
+    };
+
     let frame_selection: ExportFrameSelection;
 
     if (format === "sprite_sheet_4x4") {
-      const total_frames = metadata.frameCount;
+      const source_indices = getActiveIndices();
       frame_selection = {
-        mode: "all"
+        mode: "indices"
       };
 
       if (spriteSampling === "first_16") {
-        if (total_frames >= 16) {
-          frame_selection.mode = "range";
-          frame_selection.start = 0;
-          frame_selection.end = 15;
-        } else {
-          frame_selection.mode = "all";
-        }
+        frame_selection.indices = source_indices.slice(0, 16);
       } else if (spriteSampling === "from_current") {
-        frame_selection.mode = "range";
-        frame_selection.start = currentFrameIndex;
-        frame_selection.end = Math.min(total_frames - 1, currentFrameIndex + 15);
+        const curPos = source_indices.indexOf(currentFrameIndex);
+        const startPos = curPos !== -1 ? curPos : 0;
+        frame_selection.indices = source_indices.slice(startPos, startPos + 16);
       } else if (spriteSampling === "even_16") {
-        if (total_frames <= 16) {
-          frame_selection.mode = "all";
+        if (source_indices.length <= 16) {
+          frame_selection.indices = source_indices;
         } else {
-          frame_selection.mode = "indices";
           const idxs: number[] = [];
           for (let i = 0; i < 16; i++) {
-            idxs.push(Math.floor((i / 15) * (total_frames - 1)));
+            idxs.push(source_indices[Math.floor((i / 15) * (source_indices.length - 1))]);
           }
           frame_selection.indices = idxs;
         }
@@ -871,85 +886,14 @@ export function ExportDialog({
 
               {rangeMode === "indices" && (
                 <div className="export-form-group" style={{ marginTop: "8px" }}>
-                  <div className="export-custom-picker-panel">
-                    {/* Left Pane: Preview Viewport */}
-                    <div className="export-custom-picker-left">
-                      <div className="export-picker-preview-viewport">
-                        {hoveredFrameIndex !== null ? (
-                          <>
-                            <img src={getFrameUrl(jobId, frames.find(f => f.index === hoveredFrameIndex)?.name || frames[hoveredFrameIndex]?.name || "")} alt="" />
-                            <div className="picker-preview-label">Frame #{hoveredFrameIndex}</div>
-                          </>
-                        ) : selectedIndices.length > 0 ? (
-                          <>
-                            <img src={getFrameUrl(jobId, frames.find(f => f.index === selectedIndices[0])?.name || frames[selectedIndices[0]]?.name || "")} alt="" />
-                            <div className="picker-preview-label">Frame #{selectedIndices[0]} (First Selected)</div>
-                          </>
-                        ) : (
-                          <div className="picker-preview-empty">
-                            <ImageIcon size={24} style={{ opacity: 0.3, marginBottom: 8 }} />
-                            <span>No frames selected</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="export-picker-preview-info">
-                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                          Selected: <strong>{selectedIndices.length}</strong> / {frames.length}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Right Pane: Grid Selector with Actions */}
-                    <div className="export-custom-picker-right">
-                      <div className="picker-grid-header">
-                        <span style={{ fontSize: "12px", fontWeight: "600" }}>Frame Selector</span>
-                        <div className="picker-grid-actions">
-                          <button
-                            type="button"
-                            className="export-browse-btn"
-                            style={{ padding: "2px 8px", fontSize: "11px", height: "auto" }}
-                            onClick={() => setSelectedIndices(frames.map(f => f.index))}
-                          >
-                            Select All
-                          </button>
-                          <button
-                            type="button"
-                            className="export-browse-btn"
-                            style={{ padding: "2px 8px", fontSize: "11px", height: "auto" }}
-                            onClick={() => setSelectedIndices([])}
-                          >
-                            Clear All
-                          </button>
-                        </div>
-                      </div>
-                      <div className="picker-grid-scroll">
-                        {frames.map((frame) => {
-                          const isSelected = selectedIndices.includes(frame.index);
-                          return (
-                            <div
-                              key={frame.name}
-                              className={`picker-grid-card ${isSelected ? "selected" : ""}`}
-                              onMouseEnter={() => setHoveredFrameIndex(frame.index)}
-                              onMouseLeave={() => setHoveredFrameIndex(null)}
-                              onClick={() => {
-                                if (isSelected) {
-                                  setSelectedIndices(prev => prev.filter(i => i !== frame.index));
-                                } else {
-                                  setSelectedIndices(prev => [...prev, frame.index]);
-                                }
-                              }}
-                            >
-                              <img src={getFrameUrl(jobId, frame.name)} alt="" loading="lazy" />
-                              <span className="card-idx">#{frame.index}</span>
-                              {isSelected && (
-                                <div className="card-check-badge">
-                                  <CheckCircle2 size={10} />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+                  <div className="export-summary-box" style={{ background: "rgba(30, 215, 96, 0.05)", border: "1px dashed rgba(30, 215, 96, 0.2)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--accent-green)" }}>
+                      <CheckCircle2 size={16} />
+                      <span style={{ fontSize: "13px", fontWeight: "500", color: "#fff" }}>
+                        {selectedIndices.length === 0 
+                          ? (lang === "zh" ? "未选择任何帧，请先在侧边栏中选择要导出的帧。" : "No frames selected. Please select frames in the editor sidebar first.")
+                          : (lang === "zh" ? `将只导出在侧边栏已选择的 ${selectedIndices.length} 帧。` : `Will export the ${selectedIndices.length} frames selected in the editor sidebar.`)}
+                      </span>
                     </div>
                   </div>
                 </div>
