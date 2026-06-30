@@ -18,6 +18,11 @@ use std::time::Duration;
 
 use tauri::Manager;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// Shared backend lifecycle state.
 #[derive(Default)]
 struct BackendState {
@@ -143,6 +148,13 @@ fn spawn_backend(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let err_file = log_file.try_clone()?;
     cmd.stdout(Stdio::from(log_file));
     cmd.stderr(Stdio::from(err_file));
+
+    // On Windows, spawn the backend with no console window. Without this a
+    // PyInstaller console sidecar pops a visible `cmd.exe` that the user can
+    // close (killing the backend). CREATE_NO_WINDOW hides it entirely; the
+    // process is also detached from any parent console so it survives.
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
 
     let child = cmd.spawn()?;
 
