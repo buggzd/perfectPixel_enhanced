@@ -223,6 +223,18 @@ fn open_logs_dir(state: tauri::State<BackendState>) -> Result<(), String> {
     tauri_plugin_opener::open_path(dir, None::<&str>).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn open_path_in_finder(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    let dir = if p.is_file() {
+        p.parent().unwrap_or(p).to_path_buf()
+    } else {
+        p.to_path_buf()
+    };
+    tauri_plugin_opener::open_path(dir.to_string_lossy().into_owned(), None::<&str>).map_err(|e| e.to_string())
+}
+
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -264,7 +276,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             backend_url,
             backend_status,
-            open_logs_dir
+            open_logs_dir,
+            open_path_in_finder
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

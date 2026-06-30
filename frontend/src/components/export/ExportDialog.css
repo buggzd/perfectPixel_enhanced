@@ -524,3 +524,119 @@
   from { transform: translateX(-100%); }
   to { transform: translateX(100%); }
 }
+
+/* Visual Indices Frame Picker Selector Grid & Previews */
+.export-indices-preview-row {
+  display: flex;
+  gap: 8px;
+  background: rgba(10, 12, 16, 0.4);
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: thin;
+}
+
+.export-indices-preview-item {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.export-indices-preview-item img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.export-indices-preview-item span {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 7px;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.export-indices-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  background: rgba(10, 12, 16, 0.4);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.export-indices-grid-card {
+  aspect-ratio: 1;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.export-indices-grid-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.export-indices-grid-card.selected {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: var(--accent, #6366f1);
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+}
+
+.export-indices-grid-card img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.export-indices-grid-card .card-idx {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 8px;
+  padding: 1px 3px;
+  border-radius: 3px;
+}
+
+.export-indices-grid-card .card-check-badge {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  color: var(--accent, #6366f1);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
 import {
   X,
   FolderOpen,
@@ -74,7 +74,9 @@ export function ExportDialog({
   const [everyNFrames, setEveryNFrames] = useState<number>(1);
   const [targetFps, setTargetFps] = useState<string>("");
   const [maxFrames, setMaxFrames] = useState<string>("");
-  const [indicesInput, setIndicesInput] = useState<string>("");
+  const [selectedIndices, setSelectedIndices] = useState<number[]>(() => {
+    return [currentFrameIndex];
+  });
 
   // 4x4 Sprite Sheet details
   const [spriteSampling, setSpriteSampling] = useState<"first_16" | "from_current" | "even_16">("first_16");
@@ -258,8 +260,7 @@ export function ExportDialog({
       const e = Math.max(0, Math.min(endFrame, frames.length - 1));
       baseCount = Math.max(1, Math.abs(e - s) + 1);
     } else if (rangeMode === "indices") {
-      const parts = indicesInput.split(",").map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
-      baseCount = parts.length;
+      baseCount = selectedIndices.length;
     }
 
     let count = Math.ceil(baseCount / everyNFrames);
@@ -271,7 +272,7 @@ export function ExportDialog({
     }
 
     return count;
-  }, [format, rangeMode, startFrame, endFrame, everyNFrames, maxFrames, indicesInput, metadata.frameCount, frames]);
+  }, [format, rangeMode, startFrame, endFrame, everyNFrames, maxFrames, selectedIndices, metadata.frameCount, frames]);
 
   // Estimate single frame dimensions based on size settings
   const estimatedFrameDimensions = useMemo(() => {
@@ -420,10 +421,7 @@ export function ExportDialog({
         frame_selection.start = startFrame;
         frame_selection.end = endFrame;
       } else if (rangeMode === "indices") {
-        frame_selection.indices = indicesInput
-          .split(",")
-          .map(p => parseInt(p.trim(), 10))
-          .filter(p => !isNaN(p));
+        frame_selection.indices = [...selectedIndices].sort((a, b) => a - b);
       } else if (rangeMode === "current") {
         frame_selection.start = currentFrameIndex;
       }
@@ -486,18 +484,7 @@ export function ExportDialog({
   const handleOpenLocation = async () => {
     if (!isTauri) return;
     try {
-      if (format === "png_sequence") {
-        await openPath(outputPath);
-      } else {
-        // For file formats, we open the parent directory
-        const lastSlash = Math.max(outputPath.lastIndexOf("/"), outputPath.lastIndexOf("\\"));
-        if (lastSlash !== -1) {
-          const parentDir = outputPath.substring(0, lastSlash);
-          await openPath(parentDir);
-        } else {
-          await openPath(outputPath);
-        }
-      }
+      await invoke("open_path_in_finder", { path: outputPath });
     } catch (err) {
       console.error("Open path error:", err);
     }
@@ -820,15 +807,74 @@ export function ExportDialog({
               )}
 
               {rangeMode === "indices" && (
-                <div className="export-form-group" style={{ marginTop: "8px" }}>
-                  <label>Comma-separated Indices (e.g. 0,2,5,12)</label>
-                  <input
-                    type="text"
-                    className="export-path-input"
-                    placeholder="0, 1, 2, 3..."
-                    value={indicesInput}
-                    onChange={(e) => setIndicesInput(e.target.value)}
-                  />
+                <div className="export-form-group" style={{ marginTop: "8px", gap: "10px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <label style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: "600" }}>
+                      Selected: {selectedIndices.length} frames
+                    </label>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button
+                        type="button"
+                        className="export-browse-btn"
+                        style={{ padding: "4px 10px", fontSize: "11px", height: "auto" }}
+                        onClick={() => setSelectedIndices(frames.map(f => f.index))}
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        className="export-browse-btn"
+                        style={{ padding: "4px 10px", fontSize: "11px", height: "auto" }}
+                        onClick={() => setSelectedIndices([])}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Real-time horizontal preview list of selected frames */}
+                  {selectedIndices.length > 0 && (
+                    <div className="export-indices-preview-row">
+                      {[...selectedIndices].sort((a, b) => a - b).map(idx => {
+                        const frame = frames.find(f => f.index === idx) || frames[idx];
+                        if (!frame) return null;
+                        return (
+                          <div key={idx} className="export-indices-preview-item" title={`Frame #${idx}`}>
+                            <img src={getFrameUrl(jobId, frame.name)} alt="" />
+                            <span>#{idx}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Visual Grid Selector of all available frames */}
+                  <div className="export-indices-selector-grid">
+                    {frames.map((frame) => {
+                      const isSelected = selectedIndices.includes(frame.index);
+                      return (
+                        <div
+                          key={frame.name}
+                          className={`export-indices-grid-card ${isSelected ? "selected" : ""}`}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedIndices(prev => prev.filter(i => i !== frame.index));
+                            } else {
+                              setSelectedIndices(prev => [...prev, frame.index]);
+                            }
+                          }}
+                        >
+                          <img src={getFrameUrl(jobId, frame.name)} alt="" loading="lazy" />
+                          <span className="card-idx">#{frame.index}</span>
+                          {isSelected && (
+                            <div className="card-check-badge">
+                              <CheckCircle2 size={12} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
