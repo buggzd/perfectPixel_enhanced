@@ -223,13 +223,34 @@ fn open_logs_dir(state: tauri::State<BackendState>) -> Result<(), String> {
     tauri_plugin_opener::open_path(dir, None::<&str>).map_err(|e| e.to_string())
 }
 
+fn get_project_root() -> PathBuf {
+    if let Ok(current_dir) = std::env::current_dir() {
+        if current_dir.ends_with("frontend") {
+            if let Some(parent) = current_dir.parent() {
+                return parent.to_path_buf();
+            }
+        }
+        let mut check_dir = current_dir.clone();
+        for _ in 0..4 {
+            if check_dir.join("requirements.txt").exists() {
+                return check_dir;
+            }
+            if let Some(parent) = check_dir.parent() {
+                check_dir = parent.to_path_buf();
+            } else {
+                break;
+            }
+        }
+        return current_dir;
+    }
+    PathBuf::from(".")
+}
+
 #[tauri::command]
 fn open_path_in_finder(path: String) -> Result<(), String> {
     let mut p = PathBuf::from(&path);
     if p.is_relative() {
-        if let Ok(current_dir) = std::env::current_dir() {
-            p = current_dir.join(p);
-        }
+        p = get_project_root().join(p);
     }
     
     let dir = if p.is_file() {
@@ -253,6 +274,10 @@ fn open_path_in_finder(path: String) -> Result<(), String> {
 #[tauri::command]
 fn resolve_unique_path(path: String) -> String {
     let mut p = PathBuf::from(&path);
+    if p.is_relative() {
+        p = get_project_root().join(p);
+    }
+    
     if !p.exists() {
         return path;
     }
@@ -262,17 +287,21 @@ fn resolve_unique_path(path: String) -> String {
     if is_dir {
         let mut count = 1;
         let base_name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
-        let parent = p.parent().unwrap_or(Path::new(""));
+        let parent = p.parent().unwrap_or(&p);
         loop {
             let new_name = format!("{}_{}", base_name, count);
-            let new_p = parent.join(new_name);
+            let new_p = parent.join(&new_name);
             if !new_p.exists() {
-                return new_p.to_string_lossy().into_owned();
+                // If original path was relative, return it relative to original base
+                let orig_p = PathBuf::from(&path);
+                let orig_parent = orig_p.parent().unwrap_or(Path::new(""));
+                let ret_p = orig_parent.join(new_name);
+                return ret_p.to_string_lossy().into_owned();
             }
             count += 1;
         }
     } else {
-        let parent = p.parent().unwrap_or(Path::new(""));
+        let parent = p.parent().unwrap_or(&p);
         let file_name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
         
         let p_clone = p.clone();
@@ -290,9 +319,12 @@ fn resolve_unique_path(path: String) -> String {
             } else {
                 format!("{}_{}", stem, count)
             };
-            let new_p = parent.join(new_name);
+            let new_p = parent.join(&new_name);
             if !new_p.exists() {
-                return new_p.to_string_lossy().into_owned();
+                let orig_p = PathBuf::from(&path);
+                let orig_parent = orig_p.parent().unwrap_or(Path::new(""));
+                let ret_p = orig_parent.join(new_name);
+                return ret_p.to_string_lossy().into_owned();
             }
             count += 1;
         }

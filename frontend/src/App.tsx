@@ -186,6 +186,8 @@ function App() {
   const [playbackFps, setPlaybackFps] = useState<number>(15);
   const [loopPlayback] = useState<boolean>(true);
   const [selectedFrames, setSelectedFrames] = useState<number[]>([]);
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   
   // App error states
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -277,6 +279,19 @@ function App() {
     }, 3000);
     return () => clearInterval(interval);
   }, [bootState]);
+
+  useEffect(() => {
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setVideoPreviewUrl(url);
+      return () => {
+        URL.revokeObjectURL(url);
+        setVideoPreviewUrl(null);
+      };
+    } else {
+      setVideoPreviewUrl(null);
+    }
+  }, [file]);
 
   // 2. Playback control timer
   useEffect(() => {
@@ -519,6 +534,7 @@ function App() {
     setErrorMsg(null);
     setFrames([]);
     setSelectedFrames([]);
+    setLastSelectedIndex(null);
     setCurrentFrameIndex(0);
     setIsPlaying(false);
 
@@ -565,6 +581,7 @@ function App() {
       setJobStatus(null);
       setFrames([]);
       setSelectedFrames([]);
+      setLastSelectedIndex(null);
       setCurrentFrameIndex(0);
       setIsPlaying(false);
       setErrorMsg(null);
@@ -1072,6 +1089,16 @@ function App() {
                 </button>
               </div>
 
+              {videoPreviewUrl && (
+                <div className="video-preview-container" style={{ margin: "16px 0", borderRadius: "8px", overflow: "hidden", border: "1px solid var(--border-color)", background: "#000" }}>
+                  <video
+                    src={videoPreviewUrl}
+                    controls
+                    style={{ width: "100%", maxHeight: "240px", display: "block" }}
+                  />
+                </div>
+              )}
+
               <button 
                 className="submit-btn" 
                 onClick={handleStartProcessing} 
@@ -1355,8 +1382,35 @@ function App() {
                               if (target.closest(".thumb-select-box")) {
                                 return;
                               }
-                              setIsPlaying(false);
-                              setCurrentFrameIndex(index);
+                              
+                              if (e.shiftKey && lastSelectedIndex !== null) {
+                                const isClickingToSelect = !isSelected;
+                                const start = Math.min(lastSelectedIndex, frame.index);
+                                const end = Math.max(lastSelectedIndex, frame.index);
+                                const rangeIndices: number[] = [];
+                                for (let i = start; i <= end; i++) {
+                                  rangeIndices.push(i);
+                                }
+                                
+                                if (isClickingToSelect) {
+                                  setSelectedFrames(prev => {
+                                    const newSelection = [...prev];
+                                    rangeIndices.forEach(idx => {
+                                      if (!newSelection.includes(idx)) {
+                                        newSelection.push(idx);
+                                      }
+                                    });
+                                    return newSelection;
+                                  });
+                                } else {
+                                  setSelectedFrames(prev => prev.filter(idx => !rangeIndices.includes(idx)));
+                                }
+                              } else {
+                                setIsPlaying(false);
+                                setCurrentFrameIndex(index);
+                              }
+                              
+                              setLastSelectedIndex(frame.index);
                             }}
                           >
                             <img src={getFrameUrl(currentJobId, frame.name)} alt="" loading="lazy" />
@@ -1365,11 +1419,36 @@ function App() {
                               className={`thumb-select-box ${isSelected ? "checked" : ""}`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (isSelected) {
-                                  setSelectedFrames(prev => prev.filter(i => i !== frame.index));
+                                const isClickingToSelect = !isSelected;
+                                if (e.shiftKey && lastSelectedIndex !== null) {
+                                  const start = Math.min(lastSelectedIndex, frame.index);
+                                  const end = Math.max(lastSelectedIndex, frame.index);
+                                  const rangeIndices: number[] = [];
+                                  for (let i = start; i <= end; i++) {
+                                    rangeIndices.push(i);
+                                  }
+                                  
+                                  if (isClickingToSelect) {
+                                    setSelectedFrames(prev => {
+                                      const newSelection = [...prev];
+                                      rangeIndices.forEach(idx => {
+                                        if (!newSelection.includes(idx)) {
+                                          newSelection.push(idx);
+                                        }
+                                      });
+                                      return newSelection;
+                                    });
+                                  } else {
+                                    setSelectedFrames(prev => prev.filter(idx => !rangeIndices.includes(idx)));
+                                  }
                                 } else {
-                                  setSelectedFrames(prev => [...prev, frame.index]);
+                                  if (isSelected) {
+                                    setSelectedFrames(prev => prev.filter(i => i !== frame.index));
+                                  } else {
+                                    setSelectedFrames(prev => [...prev, frame.index]);
+                                  }
                                 }
+                                setLastSelectedIndex(frame.index);
                               }}
                             >
                               <CheckCircle2 size={12} />
