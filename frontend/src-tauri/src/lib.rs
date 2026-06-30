@@ -225,13 +225,29 @@ fn open_logs_dir(state: tauri::State<BackendState>) -> Result<(), String> {
 
 #[tauri::command]
 fn open_path_in_finder(path: String) -> Result<(), String> {
-    let p = Path::new(&path);
+    let mut p = PathBuf::from(&path);
+    if p.is_relative() {
+        if let Ok(current_dir) = std::env::current_dir() {
+            p = current_dir.join(p);
+        }
+    }
+    
     let dir = if p.is_file() {
-        p.parent().unwrap_or(p).to_path_buf()
+        p.parent().unwrap_or(&p).to_path_buf()
     } else {
-        p.to_path_buf()
+        p
     };
-    tauri_plugin_opener::open_path(dir.to_string_lossy().into_owned(), None::<&str>).map_err(|e| e.to_string())
+    
+    let mut target_dir = dir.clone();
+    while !target_dir.exists() {
+        if let Some(parent) = target_dir.parent() {
+            target_dir = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+    
+    tauri_plugin_opener::open_path(target_dir.to_string_lossy().into_owned(), None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
