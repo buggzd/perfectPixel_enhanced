@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   checkHealth,
@@ -187,6 +187,19 @@ function App() {
   const [loopPlayback] = useState<boolean>(true);
   const [selectedFrames, setSelectedFrames] = useState<number[]>([]);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+
+  // When frames are selected, playback (scrubber + count + play loop) is
+  // confined to that subset. Sorted selected frame indices form the active
+  // playback set; currentFrameIndex is mapped to its position within it.
+  const sortedSelectedFrames = useMemo(
+    () => (selectedFrames.length > 0 ? [...selectedFrames].sort((a, b) => a - b) : []),
+    [selectedFrames]
+  );
+  const hasSelection = sortedSelectedFrames.length > 0;
+  const playbackPos = hasSelection
+    ? sortedSelectedFrames.indexOf(currentFrameIndex)
+    : currentFrameIndex;
+  const playbackCount = hasSelection ? sortedSelectedFrames.length : frames.length;
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   
   // App error states
@@ -200,10 +213,7 @@ function App() {
   const pollIntervalRef = useRef<number | null>(null);
 
   // Scroll and thumbnail sync references
-  const isProgrammaticScrollRef = useRef<boolean>(false);
-  const isUserScrollingRef = useRef<boolean>(false);
   const thumbnailsContainerRef = useRef<HTMLDivElement>(null);
-  const scrollTimeoutRef = useRef<number | null>(null);
 
   // Helper state to check if a job is actively processing
   const isProcessing = isSubmitting || !!(currentJobId && jobStatus && (jobStatus.status === "running" || jobStatus.status === "queued"));
@@ -400,80 +410,34 @@ function App() {
     };
   }, [currentJobId]);
 
-  // Scroll handler for manual wheel/drag scrolling
-  const handleThumbnailsScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    // If the scroll is triggered programmatically by playback or scrubbing, ignore it
-    if (isProgrammaticScrollRef.current) return;
-
-    const container = e.currentTarget;
-    const scrollTop = container.scrollTop;
-    const containerHeight = container.clientHeight;
-    
-    // Calculate which child is closest to the vertical center of the container
-    const children = Array.from(container.children) as HTMLElement[];
-    if (children.length === 0) return;
-
-    const containerCenter = scrollTop + containerHeight / 2;
-    
-    let closestIndex = 0;
-    let minDistance = Infinity;
-
-    children.forEach((child, index) => {
-      const childCenter = child.offsetTop + child.offsetHeight / 2;
-      const distance = Math.abs(containerCenter - childCenter);
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestIndex = index;
-      }
-    });
-
-    if (closestIndex !== currentFrameIndex) {
-      isUserScrollingRef.current = true;
-      setCurrentFrameIndex(closestIndex);
-      
-      // Reset user scrolling flag after scroll stops
-      if (scrollTimeoutRef.current) {
-        window.clearTimeout(scrollTimeoutRef.current);
-      }
-      scrollTimeoutRef.current = window.setTimeout(() => {
-        isUserScrollingRef.current = false;
-      }, 150);
-    }
-  };
-
-  // Programmatic scroll effect to center active frame
+  // Programmatic scroll: place the active frame in the 2nd visible slot,
+  // keeping the previous frame visible above it. The first frame clamps to the
+  // top because nothing precedes it.
+  //
+  // Manual wheel scrolling is intentionally NOT coupled to the active frame:
+  // scrolling just pans the list and may move the active frame out of view.
+  // The active frame only moves via play / scrubber / click, which re-triggers
+  // this effect.
   useEffect(() => {
-    if (isUserScrollingRef.current) {
-      // If the change came from the user scrolling the thumbnails list,
-      // do not scroll programmatically (the item is already centered by snap)
-      return;
-    }
-
     const container = thumbnailsContainerRef.current;
-    if (container && frames.length > 0) {
-      const children = Array.from(container.children) as HTMLElement[];
-      const activeChild = children[currentFrameIndex];
-      
-      if (activeChild) {
-        isProgrammaticScrollRef.current = true;
-        
-        const containerHeight = container.clientHeight;
-        const targetTop = activeChild.offsetTop - (containerHeight / 2) + (activeChild.offsetHeight / 2);
-        
-        container.scrollTo({
-          top: targetTop,
-          behavior: "smooth"
-        });
+    if (!container || frames.length === 0) return;
 
-        // Set programmatic scroll flag to false after scroll completes
-        if (scrollTimeoutRef.current) {
-          window.clearTimeout(scrollTimeoutRef.current);
-        }
-        scrollTimeoutRef.current = window.setTimeout(() => {
-          isProgrammaticScrollRef.current = false;
-        }, 300); // 300ms matches scroll animation length
-      }
-    }
+    const children = Array.from(container.children) as HTMLElement[];
+    const activeChild = children[currentFrameIndex];
+    if (!activeChild) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const activeRect = activeChild.getBoundingClientRect();
+    const styles = window.getComputedStyle(container);
+    const rowGap = parseFloat(styles.rowGap || styles.gap || "0") || 0;
+    const secondSlotTop = activeChild.offsetHeight + rowGap;
+    const targetTop =
+      container.scrollTop + activeRect.top - containerRect.top - secondSlotTop;
+
+    container.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: "smooth",
+    });
   }, [currentFrameIndex, frames]);
 
   // Drag and drop handlers
@@ -1214,25 +1178,39 @@ function App() {
                           className="player-frame-img"
                         />
                         <div className="viewport-overlay">
-                          {t.frameText} {frames[currentFrameIndex].index} / {frames.length - 1}
+                          {t.frameText}{" "}
+                          {hasSelection && playbackPos !== -1
+                            ? `${playbackPos + 1} / ${playbackCount}`
+                            : `${frames[currentFrameIndex].index} / ${frames.length - 1}`}
                         </div>
                       </div>
 
                       <div className="player-controls-row">
                         {/* Seek Slider */}
                         <div className="scrubber-container">
-                          <input 
-                            type="range" 
-                            min="0" 
-                            max={frames.length - 1} 
-                            value={currentFrameIndex} 
+                          <input
+                            type="range"
+                            min={0}
+                            max={hasSelection ? sortedSelectedFrames.length - 1 : frames.length - 1}
+                            value={hasSelection ? (playbackPos === -1 ? 0 : playbackPos) : currentFrameIndex}
                             onChange={(e) => {
                               setIsPlaying(false);
-                              setCurrentFrameIndex(parseInt(e.target.value, 10));
+                              if (hasSelection) {
+                                const pos = Math.min(
+                                  sortedSelectedFrames.length - 1,
+                                  Math.max(0, parseInt(e.target.value, 10))
+                                );
+                                const idx = sortedSelectedFrames[pos];
+                                if (idx !== undefined) setCurrentFrameIndex(idx);
+                              } else {
+                                setCurrentFrameIndex(parseInt(e.target.value, 10));
+                              }
                             }}
                           />
                           <span className="current-time-badge">
-                            {currentFrameIndex + 1} / {frames.length}
+                            {hasSelection && playbackPos !== -1
+                              ? `${playbackPos + 1} / ${playbackCount}`
+                              : `${currentFrameIndex + 1} / ${frames.length}`}
                           </span>
                         </div>
 
@@ -1366,10 +1344,9 @@ function App() {
                         </button>
                       </div>
                     </div>
-                    <div 
+                    <div
                       ref={thumbnailsContainerRef}
                       className="thumbnails-grid"
-                      onScroll={handleThumbnailsScroll}
                     >
                       {frames.map((frame, index) => {
                         const isSelected = selectedFrames.includes(frame.index);

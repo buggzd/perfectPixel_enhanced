@@ -1170,9 +1170,11 @@ input:checked + .toggle-slider:before {
   gap: 12px;
   height: 580px; /* Increased to fill sidebar height */
   overflow-y: scroll;
-  padding: 240px 0; /* Centered snap padding: 290px minus 50px */
-  scroll-behavior: smooth;
-  scroll-snap-type: y mandatory;
+  /* The active-frame anchor is calculated in App.tsx. Bottom padding lets the
+     final frames still reach that second visible slot. */
+  padding: 0 0 340px;
+  /* scroll-behavior left at auto so the mouse wheel scrolls natively; the
+     active-frame repositioning passes behavior:"smooth" explicitly. */
   scrollbar-width: none; /* Hide scrollbar in Firefox */
 }
 
@@ -1192,9 +1194,11 @@ input:checked + .toggle-slider:before {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-normal);
+  transition: opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.28s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
-  scroll-snap-align: center;
   opacity: 0.4; /* Dim inactive frames for cover-flow contrast */
   transform: scale(0.92);
 }
