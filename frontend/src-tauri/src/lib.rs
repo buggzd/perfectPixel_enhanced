@@ -107,70 +107,32 @@ fn build_backend_command(
         Ok((cmd, jobs_dir, logs_dir))
     } else {
         // The sidecar ships as an onedir bundle under `bundle.resources`
-        // (glob "binaries/perfect-pixel-api-*"). Tauri places resources in the
-        // bundle's resource dir (Contents/Resources on macOS, alongside the exe
-        // on Windows). The directory is named perfect-pixel-api-<triple>; find
-        // the one matching this host's triple, then run the executable inside.
+        // (map: "binaries/perfect-pixel-api" -> "binaries/"). Tauri copies the
+        // source dir's CONTENTS into Resources/binaries/, so the executable and
+        // its sibling `_internal/` land at:
+        //   <resource_dir>/binaries/perfect-pixel-api[.exe]
+        //   <resource_dir>/binaries/_internal/
+        // (PyInstaller onedir only needs the exe + _internal to be siblings.)
         let resource_dir = app.path().resource_dir()?;
-        let sidecar = resolve_sidecar(&resource_dir)?;
+        let exe_name = if cfg!(windows) {
+            "perfect-pixel-api.exe"
+        } else {
+            "perfect-pixel-api"
+        };
+        let sidecar = resource_dir.join("binaries").join(exe_name);
+        if !sidecar.exists() {
+            return Err(format!(
+                "sidecar executable not found at {}",
+                sidecar.display()
+            )
+            .into());
+        }
         let data_dir = app.path().app_local_data_dir()?;
         let jobs_dir = data_dir.join("jobs");
         let logs_dir = data_dir.join("logs");
         let cmd = Command::new(sidecar);
         Ok((cmd, jobs_dir, logs_dir))
     }
-}
-
-/// Locate the onedir sidecar executable inside the resource directory.
-///
-/// `binaries/` is the path used in tauri.conf.json's `resources` glob; under it
-/// we ship `perfect-pixel-api-<triple>/perfect-pixel-api[.exe]`. We don't know
-/// the host triple at compile time via std, so glob for the directory and pick
-/// the (single) match.
-fn resolve_sidecar(resource_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let exe_name = if cfg!(windows) {
-        "perfect-pixel-api.exe"
-    } else {
-        "perfect-pixel-api"
-    };
-
-    // Resources preserve the `binaries/` parent dir from the glob; the onedir
-    // is `binaries/perfect-pixel-api-<triple>/`. Also try a flat layout.
-    let search_roots = [
-        resource_dir.join("binaries"),
-        resource_dir.to_path_buf(),
-    ];
-    for root in &search_roots {
-        for dir in glob(root)? {
-            let exe = dir.join(exe_name);
-            if exe.exists() {
-                return Ok(exe);
-            }
-        }
-    }
-    Err(format!(
-        "sidecar executable '{}' not found under resource dir {}",
-        exe_name,
-        resource_dir.display()
-    )
-    .into())
-}
-
-/// List immediate child directories of `dir` whose name starts with the
-/// `perfect-pixel-api-` prefix (the onedir bundles). Returns empty if `dir`
-/// doesn't exist.
-fn glob(dir: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
-    let mut out = Vec::new();
-    for e in std::fs::read_dir(dir)? {
-        let e = e?;
-        if e.file_type()?.is_dir() {
-            let name = e.file_name().to_string_lossy().into_owned();
-            if name.starts_with("perfect-pixel-api-") {
-                out.push(e.path());
-            }
-        }
-    }
-    Ok(out)
 }
 
 /// Spawn the backend and start a background health-poll thread that flips

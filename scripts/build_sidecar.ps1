@@ -42,14 +42,11 @@ if (-not (Test-Path $SrcExe)) {
     throw "Expected onedir bundle at $SrcExe not found"
 }
 
-# Resolve the Rust host target triple (e.g. x86_64-pc-windows-msvc).
-$triple = (rustc -vV | Select-String "^host:").ToString().Split(":")[1].Trim()
-if ([string]::IsNullOrWhiteSpace($triple)) {
-    throw "Could not determine rustc host triple. Is rustc installed?"
-}
-
+# Copy to a FIXED dir name (no target-triple suffix). Unlike `externalBin`,
+# `bundle.resources` doesn't require a triple suffix — one fixed name works on
+# every platform.
 $OutDir = Join-Path $RepoRoot "frontend\src-tauri\binaries"
-$Dest   = Join-Path $OutDir "perfect-pixel-api-$triple"
+$Dest   = Join-Path $OutDir "perfect-pixel-api"
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 if (Test-Path $Dest) { Remove-Item -Recurse -Force $Dest }
 Copy-Item -Path $SrcDir -Destination $Dest -Recurse

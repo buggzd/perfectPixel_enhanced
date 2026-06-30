@@ -32,10 +32,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "binaries/perfect-pixel-api-*/*",
-      "binaries/perfect-pixel-api-*/**/*"
-    ],
+    "resources": {
+      "binaries/perfect-pixel-api": "binaries/"
+    },
     "macOS": {
       "signingIdentity": "-",
       "entitlements": "Entitlements.plist"

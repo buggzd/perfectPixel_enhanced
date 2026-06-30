@@ -42,18 +42,15 @@ if [ ! -x "$SRC_DIR/perfect-pixel-api" ]; then
   exit 1
 fi
 
-# Resolve the Rust host target triple (e.g. aarch64-apple-darwin).
-TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
-if [ -z "$TRIPLE" ]; then
-  echo "!! Could not determine rustc host triple. Is rustc installed?" >&2
-  exit 1
-fi
-
+# Copy to a FIXED dir name (no target-triple suffix). Unlike `externalBin`,
+# `bundle.resources` doesn't require a triple suffix — one fixed name works on
+# every platform. Dereference symlinks (-L) so the resource tree is fully
+# concrete (Tauri's resource walker mishandles symlinks-in-a-framework-tree).
 OUT_DIR="$REPO_ROOT/frontend/src-tauri/binaries"
-DEST="$OUT_DIR/perfect-pixel-api-$TRIPLE"
+DEST="$OUT_DIR/perfect-pixel-api"
 mkdir -p "$OUT_DIR"
 rm -rf "$DEST"
-cp -R "$SRC_DIR" "$DEST"
+cp -RL "$SRC_DIR" "$DEST"
 chmod +x "$DEST/perfect-pixel-api"
 
 # Ad-hoc sign every native binary in the bundle with the hardened-runtime +
