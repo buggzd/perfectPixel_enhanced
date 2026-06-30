@@ -196,13 +196,14 @@ export function ExportDialog({
   useEffect(() => {
     if (!outputPath && isTauri) {
       // Set reasonable default names based on format
-      const defaultName = "pixel_export";
       if (format === "png_sequence") {
-        setOutputPath(""); // Let user pick folder
+        setOutputPath("output/pixel_sequence");
       } else if (format === "gif") {
-        setOutputPath(`${defaultName}.gif`);
+        setOutputPath("output/pixel_export.gif");
+      } else if (format === "sprite_sheet_4x4") {
+        setOutputPath("output/pixel_sheet.png");
       } else {
-        setOutputPath(`${defaultName}.png`);
+        setOutputPath("output/pixel_frame.png");
       }
     }
   }, [format, outputPath, isTauri]);
@@ -640,7 +641,7 @@ export function ExportDialog({
                 className={`export-tab-btn ${format === "png_sequence" ? "active" : ""}`}
                 onClick={() => {
                   setFormat("png_sequence");
-                  setOutputPath("");
+                  setOutputPath(isTauri ? "output/pixel_sequence" : "");
                 }}
               >
                 <Film size={16} />
@@ -650,7 +651,7 @@ export function ExportDialog({
                 className={`export-tab-btn ${format === "gif" ? "active" : ""}`}
                 onClick={() => {
                   setFormat("gif");
-                  setOutputPath(isTauri ? "pixel_export.gif" : "");
+                  setOutputPath(isTauri ? "output/pixel_export.gif" : "");
                 }}
               >
                 <Film size={16} />
@@ -660,7 +661,7 @@ export function ExportDialog({
                 className={`export-tab-btn ${format === "sprite_sheet_4x4" ? "active" : ""}`}
                 onClick={() => {
                   setFormat("sprite_sheet_4x4");
-                  setOutputPath(isTauri ? "pixel_sheet.png" : "");
+                  setOutputPath(isTauri ? "output/pixel_sheet.png" : "");
                 }}
               >
                 <ImageIcon size={16} />
@@ -670,7 +671,7 @@ export function ExportDialog({
                 className={`export-tab-btn ${format === "single_png" ? "active" : ""}`}
                 onClick={() => {
                   setFormat("single_png");
-                  setOutputPath(isTauri ? "pixel_frame.png" : "");
+                  setOutputPath(isTauri ? "output/pixel_frame.png" : "");
                 }}
               >
                 <ImageIcon size={16} />
