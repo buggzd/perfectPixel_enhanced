@@ -50,6 +50,84 @@ export const translations = {
     pickBackgroundColor: "Pick From Frame",
     pickBackgroundHint: "Click original frame to sample",
     backgroundPickFailed: "Failed to sample color from the frame.",
+    paramHelp: {
+      sampleMethod: {
+        main: "Changes how each pixel-art block chooses its final color. Use Majority for stable, clean sprites; Center for a sharper but less forgiving look; Median for softer noisy footage.",
+        tech: "Chooses the representative color inside each detected grid cell.",
+      },
+      gridDimensions: {
+        main: "Only set this when auto detection picks the wrong pixel grid. Leaving it on Auto is best for most videos.",
+        tech: "Overrides detected grid width and height before frame sampling.",
+      },
+      refineIntensity: {
+        main: "Adjusts how strongly the app snaps the detected grid to the artwork. Higher can fix misalignment, but too high may warp edges.",
+        tech: "Controls grid-line refinement strength.",
+      },
+      voteFrames: {
+        main: "Looks at several early frames before deciding the grid size. Higher is safer for shaky starts, but takes a little longer.",
+        tech: "Uses median grid detection across the first selected frames.",
+      },
+      outputScale: {
+        main: "Makes the exported pixel art larger while keeping crisp square pixels. This also defines the block unit used by background removal.",
+        tech: "Nearest-neighbor upscale factor applied after pixel sampling.",
+      },
+      minSize: {
+        main: "Tells the detector the smallest pixel block it should expect. Raise it if the app finds tiny false grids; lower it for very small pixel art.",
+        tech: "Minimum grid scale considered during detection.",
+      },
+      peakWidth: {
+        main: "Controls how broadly the detector searches for grid rhythm. Adjust only if grid detection feels unstable.",
+        tech: "Peak width used when detecting repeated grid spacing.",
+      },
+      frameStep: {
+        main: "Skips frames to make processing faster and reduce output count. Use 1 for smooth animation, higher values for shorter sequences.",
+        tech: "Processes every Nth source frame.",
+      },
+      fixSquare: {
+        main: "Keeps pixel blocks square when the detected result is off by one row or column.",
+        tech: "Applies a one-pixel dimension correction after sampling.",
+      },
+      adaptiveGrid: {
+        main: "Lets the grid gently follow camera or subject movement. Helpful for moving footage, but static clips may look steadier with it off.",
+        tech: "Re-refines grid coordinates per frame with temporal blending.",
+      },
+      temporalSmoothing: {
+        main: "Reduces frame-to-frame color flicker. Higher smoothing can look calmer, but may soften quick color changes.",
+        tech: "Applies exponential smoothing to sampled output colors.",
+      },
+      denoise: {
+        main: "Cleans video compression noise before pixel detection. Useful for low-quality footage, but can soften very crisp sources.",
+        tech: "Applies edge-preserving bilateral filtering before analysis.",
+      },
+      gridBlend: {
+        main: "Controls how much the grid resists moving between frames. Higher is steadier; lower follows motion faster.",
+        tech: "Previous-frame weight for adaptive grid coordinate blending.",
+      },
+      temporalAlpha: {
+        main: "Controls how quickly smoothed colors react to changes. Higher reacts faster; lower reduces flicker more.",
+        tech: "Current-frame weight in temporal color smoothing.",
+      },
+      sceneThreshold: {
+        main: "Helps avoid ghosting during cuts or fast changes. Lower detects changes sooner; higher smooths through more variation.",
+        tech: "Per-pixel change threshold that bypasses temporal smoothing.",
+      },
+      denoiseStrength: {
+        main: "Sets how much compression noise cleanup is applied. Raise it for blocky video; lower it to preserve fine edges.",
+        tech: "Bilateral filter strength.",
+      },
+      backgroundColor: {
+        main: "The color treated as background. Use auto-detect for simple backgrounds, or pick from the original frame when you need precision.",
+        tech: "Matched against block-average BGR color before edge-connected masking.",
+      },
+      backgroundThreshold: {
+        main: "Controls how close a block must be to the selected background color to be removed. Higher removes more similar shades.",
+        tech: "Euclidean color distance threshold on pixel-art blocks.",
+      },
+      backgroundFeather: {
+        main: "Softens the edge after background removal. Keep it low for crisp pixel art; raise it when edges look too harsh.",
+        tech: "Gaussian blur radius applied to the alpha mask.",
+      },
+    },
     skipBackground: "Skip & Continue",
     applyBackgroundAll: "Apply to All Frames",
     applyingBackground: "Applying...",
@@ -110,9 +188,20 @@ export const translations = {
     clearAll: "Clear All",
     frameText: "Frame",
     restart: "Restart",
+    firstFrame: "First Frame",
+    previousFrame: "Previous Frame",
+    nextFrame: "Next Frame",
+    lastFrame: "Last Frame",
     play: "Play",
     pause: "Pause",
     fps: "FPS:",
+    selectedCount: (n: number) => `Selected: ${n}`,
+    selectEveryNLabel: "Every N frames",
+    applySelection: "Apply",
+    keyframeThresholdLabel: "Change threshold",
+    autoKeyframes: "Keyframes",
+    analyzingKeyframes: "Analyzing...",
+    keyframeSelectionFailed: "Failed to analyze keyframes.",
     // State 5: Export Dialog
     exportModalTitle: "Export Options",
     exportBtnText: "Export...",
@@ -228,6 +317,84 @@ export const translations = {
     pickBackgroundColor: "吸取原图颜色",
     pickBackgroundHint: "点击原图吸取颜色",
     backgroundPickFailed: "无法从当前帧吸取颜色。",
+    paramHelp: {
+      sampleMethod: {
+        main: "决定每个像素块最终取什么颜色。多数颜色最稳、最干净；中心采样更锐利但更挑素材；中位数适合噪点较多的画面。",
+        tech: "在每个检测到的网格单元内选择代表色。",
+      },
+      gridDimensions: {
+        main: "只有自动识别网格不准时才需要手动填写。大多数视频保持自动更合适。",
+        tech: "覆盖自动检测到的网格宽高。",
+      },
+      refineIntensity: {
+        main: "控制网格贴合原画的力度。调高能修正错位，但过高可能让边缘变形。",
+        tech: "控制网格线 refinement 的强度。",
+      },
+      voteFrames: {
+        main: "用开头多帧一起判断网格大小。数值越高越稳，适合开头抖动的视频，但会稍微慢一点。",
+        tech: "对前若干采样帧的网格检测结果取中位数。",
+      },
+      outputScale: {
+        main: "把输出像素画放大，同时保持像素方块清晰。背景去除也会按这个块大小作为最小扣图单位。",
+        tech: "像素采样后使用 nearest-neighbor 放大。",
+      },
+      minSize: {
+        main: "告诉检测器最小的像素块大概多大。误识别出很小的假网格时调高；素材像素很小时调低。",
+        tech: "网格检测时考虑的最小 grid scale。",
+      },
+      peakWidth: {
+        main: "控制检测器寻找网格节奏的宽松程度。只有网格识别不稳定时才建议调整。",
+        tech: "检测重复网格间距时使用的峰宽。",
+      },
+      frameStep: {
+        main: "跳帧处理以减少耗时和输出数量。想要动画顺滑用 1；想要更短序列就调高。",
+        tech: "每 N 帧处理 1 帧。",
+      },
+      fixSquare: {
+        main: "当检测结果差一行或一列时，尽量保持像素块是正方形。",
+        tech: "采样后进行一像素维度修正。",
+      },
+      adaptiveGrid: {
+        main: "让网格跟随镜头或角色移动。运动画面更适合开启；静态画面关闭可能更稳。",
+        tech: "逐帧重新优化网格坐标并做时序融合。",
+      },
+      temporalSmoothing: {
+        main: "减少帧与帧之间的颜色闪烁。画面会更稳，但快速颜色变化可能稍微变钝。",
+        tech: "对输出颜色做指数时序平滑。",
+      },
+      denoise: {
+        main: "在识别前清理视频压缩噪点。低清素材很有用，但清晰素材可能会被轻微软化。",
+        tech: "分析前应用保边双边滤波。",
+      },
+      gridBlend: {
+        main: "控制网格在帧间移动得多稳。越高越稳，越低越能快速跟随运动。",
+        tech: "自适应网格坐标融合中的上一帧权重。",
+      },
+      temporalAlpha: {
+        main: "控制平滑后的颜色响应速度。越高越跟手，越低越能压住闪烁。",
+        tech: "时序颜色平滑中的当前帧权重。",
+      },
+      sceneThreshold: {
+        main: "帮助避免转场或快速变化时出现拖影。越低越容易识别变化，越高越倾向继续平滑。",
+        tech: "超过该像素变化阈值时跳过时序平滑。",
+      },
+      denoiseStrength: {
+        main: "控制压缩噪点清理力度。视频块状噪点明显时调高；想保留锐利边缘时调低。",
+        tech: "双边滤波强度。",
+      },
+      backgroundColor: {
+        main: "被当作背景的颜色。纯色背景可用自动取色；需要更准时可从原图上吸取。",
+        tech: "与像素块平均 BGR 颜色比较后生成边缘连通 mask。",
+      },
+      backgroundThreshold: {
+        main: "控制多接近背景色的块会被扣掉。越高扣得越多，也更容易吃到相近颜色。",
+        tech: "像素块颜色欧氏距离阈值。",
+      },
+      backgroundFeather: {
+        main: "柔化扣图边缘。像素画想保持硬边时用低值；边缘太硬时再调高。",
+        tech: "对 alpha mask 应用高斯模糊半径。",
+      },
+    },
     skipBackground: "跳过并继续",
     applyBackgroundAll: "应用到全部帧",
     applyingBackground: "正在应用...",
@@ -288,9 +455,20 @@ export const translations = {
     clearAll: "清空",
     frameText: "帧",
     restart: "重头播放",
+    firstFrame: "跳到第一帧",
+    previousFrame: "上一帧",
+    nextFrame: "下一帧",
+    lastFrame: "跳到最后一帧",
     play: "播放",
     pause: "暂停",
     fps: "帧率:",
+    selectedCount: (n: number) => `已选: ${n}`,
+    selectEveryNLabel: "每 N 帧选择",
+    applySelection: "应用",
+    keyframeThresholdLabel: "变化阈值",
+    autoKeyframes: "关键帧",
+    analyzingKeyframes: "分析中...",
+    keyframeSelectionFailed: "关键帧分析失败。",
     // State 5: Export Dialog
     exportModalTitle: "导出设置",
     exportBtnText: "导出...",

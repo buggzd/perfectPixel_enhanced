@@ -57,14 +57,14 @@ def _border_connected_mask(candidate: np.ndarray) -> np.ndarray:
     work = candidate.astype(np.uint8).copy()
 
     for x in range(w):
-        if work[0, x]:
+        if work[0, x] == 1:
             cv2.floodFill(work, flood, (x, 0), 2)
-        if work[h - 1, x]:
+        if work[h - 1, x] == 1:
             cv2.floodFill(work, flood, (x, h - 1), 2)
     for y in range(h):
-        if work[y, 0]:
+        if work[y, 0] == 1:
             cv2.floodFill(work, flood, (0, y), 2)
-        if work[y, w - 1]:
+        if work[y, w - 1] == 1:
             cv2.floodFill(work, flood, (w - 1, y), 2)
 
     return work == 2
@@ -79,15 +79,21 @@ def _block_mean_bgr(bgr: np.ndarray, block_size: int) -> np.ndarray:
     h, w = bgr.shape[:2]
     cells_h = (h + block - 1) // block
     cells_w = (w + block - 1) // block
-    out = np.zeros((cells_h, cells_w, 3), dtype=np.float32)
-    for y in range(cells_h):
-        y0 = y * block
-        y1 = min(h, y0 + block)
-        for x in range(cells_w):
-            x0 = x * block
-            x1 = min(w, x0 + block)
-            out[y, x] = bgr[y0:y1, x0:x1].reshape(-1, 3).mean(axis=0)
-    return out
+    y0 = np.arange(cells_h) * block
+    x0 = np.arange(cells_w) * block
+    y1 = np.minimum(y0 + block, h)
+    x1 = np.minimum(x0 + block, w)
+
+    sat = bgr.astype(np.float32).cumsum(axis=0).cumsum(axis=1)
+    sat = np.pad(sat, ((1, 0), (1, 0), (0, 0)), mode="constant")
+    sums = (
+        sat[y1[:, None], x1[None, :]]
+        - sat[y0[:, None], x1[None, :]]
+        - sat[y1[:, None], x0[None, :]]
+        + sat[y0[:, None], x0[None, :]]
+    )
+    areas = ((y1 - y0)[:, None] * (x1 - x0)[None, :]).astype(np.float32)
+    return sums / areas[..., None]
 
 
 def _expand_block_mask(mask: np.ndarray, shape: Tuple[int, int], block_size: int) -> np.ndarray:

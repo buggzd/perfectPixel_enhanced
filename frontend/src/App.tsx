@@ -18,6 +18,10 @@ import {
 import { 
   Play, 
   Pause, 
+  SkipBack,
+  SkipForward,
+  StepBack,
+  StepForward,
   UploadCloud, 
   Video, 
   AlertTriangle, 
@@ -25,11 +29,11 @@ import {
   Trash2, 
   Activity, 
   Sparkles, 
-  RefreshCw, 
   ArrowLeft, 
   Download,
   Eraser,
-  Pipette
+  Pipette,
+  Wand2
 } from "lucide-react";
 import "./App.css";
 import { translations, Language } from "./i18n";
@@ -131,6 +135,35 @@ function CustomSelect<T extends string | number>({
   );
 }
 
+interface ParamHelp {
+  main: string;
+  tech?: string;
+}
+
+interface TooltipLabelProps {
+  children: React.ReactNode;
+  help: ParamHelp;
+  value?: React.ReactNode;
+  htmlFor?: string;
+  style?: React.CSSProperties;
+  className?: string;
+}
+
+function TooltipLabel({ children, help, value, htmlFor, style, className = "" }: TooltipLabelProps) {
+  return (
+    <label htmlFor={htmlFor} className={`tooltip-label ${className}`} style={style}>
+      <span className="tooltip-anchor" tabIndex={0}>
+        {children}
+        <span className="tooltip-popover" role="tooltip">
+          <span>{help.main}</span>
+          {help.tech && <small>{help.tech}</small>}
+        </span>
+      </span>
+      {value}
+    </label>
+  );
+}
+
 function App() {
   // Language State
   const [lang, setLang] = useState<Language>(() => {
@@ -191,6 +224,9 @@ function App() {
   const [loopPlayback] = useState<boolean>(true);
   const [selectedFrames, setSelectedFrames] = useState<number[]>([]);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+  const [selectionEveryN, setSelectionEveryN] = useState<number>(4);
+  const [keyframeThreshold, setKeyframeThreshold] = useState<number>(18);
+  const [isSelectingKeyframes, setIsSelectingKeyframes] = useState<boolean>(false);
   const [reviewStep, setReviewStep] = useState<"background" | "frames">("background");
   const [autoBackground, setAutoBackground] = useState<boolean>(true);
   const [backgroundColor, setBackgroundColor] = useState<string>("#000000");
@@ -207,11 +243,12 @@ function App() {
     () => (selectedFrames.length > 0 ? [...selectedFrames].sort((a, b) => a - b) : []),
     [selectedFrames]
   );
+  const allFrameIndices = useMemo(() => frames.map((frame) => frame.index), [frames]);
+  const selectedFrameSet = useMemo(() => new Set(selectedFrames), [selectedFrames]);
   const hasSelection = sortedSelectedFrames.length > 0;
-  const playbackPos = hasSelection
-    ? sortedSelectedFrames.indexOf(currentFrameIndex)
-    : currentFrameIndex;
-  const playbackCount = hasSelection ? sortedSelectedFrames.length : frames.length;
+  const playbackFrameIndices = hasSelection ? sortedSelectedFrames : allFrameIndices;
+  const playbackPos = playbackFrameIndices.indexOf(currentFrameIndex);
+  const playbackCount = playbackFrameIndices.length;
   const backgroundBlockSize = Math.max(1, outputScale);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   
@@ -220,6 +257,7 @@ function App() {
 
   // Export Dialog visibility state
   const [isExportDialogOpen, setIsExportDialogOpen] = useState<boolean>(false);
+  const [thumbnailScrollTop, setThumbnailScrollTop] = useState<number>(0);
 
   // Interval references
   const playIntervalRef = useRef<number | null>(null);
@@ -237,6 +275,13 @@ function App() {
 
   // Helper state to check if a job is actively processing
   const isProcessing = isSubmitting || !!(currentJobId && jobStatus && (jobStatus.status === "running" || jobStatus.status === "queued"));
+  const thumbnailItemHeight = 113;
+  const thumbnailViewportHeight = 580;
+  const thumbnailOverscan = 6;
+  const thumbnailStartIndex = Math.max(0, Math.floor(thumbnailScrollTop / thumbnailItemHeight) - thumbnailOverscan);
+  const thumbnailVisibleCount = Math.ceil(thumbnailViewportHeight / thumbnailItemHeight) + thumbnailOverscan * 2;
+  const thumbnailEndIndex = Math.min(frames.length, thumbnailStartIndex + thumbnailVisibleCount);
+  const visibleThumbnailFrames = frames.slice(thumbnailStartIndex, thumbnailEndIndex);
 
   // 0. Boot: ask the Tauri shell for the backend URL once the sidecar is ready.
   //    In a plain browser (no Tauri), skip and fall back to the default URL.
@@ -325,36 +370,20 @@ function App() {
 
   // 2. Playback control timer
   useEffect(() => {
-    if (isPlaying && frames.length > 0) {
+    if (isPlaying && playbackFrameIndices.length > 0) {
       playIntervalRef.current = window.setInterval(() => {
         setCurrentFrameIndex((prevIndex) => {
-          if (selectedFrames.length > 0) {
-            const sortedSelected = [...selectedFrames].sort((a, b) => a - b);
-            const curIdx = sortedSelected.indexOf(prevIndex);
-            if (curIdx === -1) {
-              const nextLarger = sortedSelected.find(idx => idx >= prevIndex);
-              return nextLarger !== undefined ? nextLarger : sortedSelected[0];
-            } else if (curIdx >= sortedSelected.length - 1) {
-              if (loopPlayback) {
-                return sortedSelected[0];
-              } else {
-                setIsPlaying(false);
-                return prevIndex;
-              }
-            } else {
-              return sortedSelected[curIdx + 1];
-            }
-          } else {
-            if (prevIndex >= frames.length - 1) {
-              if (loopPlayback) {
-                return 0;
-              } else {
-                setIsPlaying(false);
-                return prevIndex;
-              }
-            }
-            return prevIndex + 1;
+          const curIdx = playbackFrameIndices.indexOf(prevIndex);
+          if (curIdx === -1) {
+            const nextLarger = playbackFrameIndices.find(idx => idx >= prevIndex);
+            return nextLarger !== undefined ? nextLarger : playbackFrameIndices[0];
           }
+          if (curIdx >= playbackFrameIndices.length - 1) {
+            if (loopPlayback) return playbackFrameIndices[0];
+            setIsPlaying(false);
+            return prevIndex;
+          }
+          return playbackFrameIndices[curIdx + 1];
         });
       }, 1000 / playbackFps);
     } else {
@@ -369,7 +398,7 @@ function App() {
         clearInterval(playIntervalRef.current);
       }
     };
-  }, [isPlaying, frames, playbackFps, loopPlayback, selectedFrames]);
+  }, [isPlaying, playbackFrameIndices, playbackFps, loopPlayback]);
 
   // 3. Status Poll effect
   useEffect(() => {
@@ -379,20 +408,20 @@ function App() {
           const status = await getJobStatus(currentJobId);
           setJobStatus(status);
 
-          // Update frames list dynamically during execution
-          if (status.output_frames.length > 0) {
-            // Keep frames list updated
-            const mappedFrames: FrameInfo[] = status.output_frames.map((name) => {
-              try {
-                const idx = parseInt(name.split("_")[1].split(".")[0]);
-                return { name, index: idx };
-              } catch (e) {
-                return { name, index: -1 };
+          // Keep the polling payload small; refresh the frame list only when
+          // the backend reports that new frames are available.
+          if (status.output_frame_count > 0) {
+            setFrames((prev) => {
+              if (prev.length === status.output_frame_count) return prev;
+              const next: FrameInfo[] = [];
+              for (let i = 0; i < status.output_frame_count; i += 1) {
+                next.push({
+                  name: `frame_${i.toString().padStart(6, "0")}.png`,
+                  index: i,
+                });
               }
+              return next;
             });
-            // Sort by index ascending
-            mappedFrames.sort((a, b) => a.index - b.index);
-            setFrames(mappedFrames);
           }
 
           if (status.status === "done") {
@@ -467,16 +496,7 @@ function App() {
       thumbnailsAlignmentFrameId.current = null;
     }
 
-    const children = Array.from(container.children) as HTMLElement[];
-    const activeChild = children[currentFrameIndex];
-    if (!activeChild) return;
-
-    const containerRect = container.getBoundingClientRect();
-    const activeRect = activeChild.getBoundingClientRect();
-    const styles = window.getComputedStyle(container);
-    const rowGap = parseFloat(styles.rowGap || styles.gap || "0") || 0;
-    const secondSlotTop = activeChild.offsetHeight + rowGap;
-    const targetTop = Math.max(0, container.scrollTop + activeRect.top - containerRect.top - secondSlotTop);
+    const targetTop = Math.max(0, currentFrameIndex * thumbnailItemHeight - thumbnailItemHeight);
 
     // 3. Custom Ease-Out Scroll Animation (先快后慢)
     const easeFactor = 0.16; // Speed coefficient (0.15 - 0.20 is standard ease-out)
@@ -487,11 +507,13 @@ function App() {
 
       if (Math.abs(diff) < 0.5) {
         container.scrollTop = targetTop;
+        setThumbnailScrollTop(targetTop);
         thumbnailsAlignmentFrameId.current = null;
         return;
       }
 
       container.scrollTop = currentScroll + diff * easeFactor;
+      setThumbnailScrollTop(container.scrollTop);
       thumbnailsAlignmentFrameId.current = requestAnimationFrame(animateAlignment);
     };
 
@@ -502,7 +524,7 @@ function App() {
         cancelAnimationFrame(thumbnailsAlignmentFrameId.current);
       }
     };
-  }, [currentFrameIndex, frames]);
+  }, [currentFrameIndex, frames.length]);
 
   // 2b. Custom smooth wheel scrolling with momentum/inertia for frames list
   useEffect(() => {
@@ -525,6 +547,7 @@ function App() {
       }
 
       container.scrollTop += vel;
+      setThumbnailScrollTop(container.scrollTop);
       thumbnailsInertiaVelocity.current = vel * friction;
 
       thumbnailsInertiaFrameId.current = requestAnimationFrame(updateScroll);
@@ -555,15 +578,21 @@ function App() {
       }
     };
 
+    const handleScroll = () => {
+      setThumbnailScrollTop(container.scrollTop);
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
     container.addEventListener("wheel", handleWheel, { passive: false });
 
     return () => {
+      container.removeEventListener("scroll", handleScroll);
       container.removeEventListener("wheel", handleWheel);
       if (thumbnailsInertiaFrameId.current) {
         cancelAnimationFrame(thumbnailsInertiaFrameId.current);
       }
     };
-  }, [frames]);
+  }, [frames.length]);
 
   // 2c. Custom smooth wheel scrolling with momentum/inertia for settings panel
   useEffect(() => {
@@ -660,6 +689,105 @@ function App() {
   const selectFileManual = () => {
     if (fileInputRef.current) {
       fileInputRef.current.click();
+    }
+  };
+
+  const jumpPlaybackTo = (target: "first" | "last") => {
+    if (playbackFrameIndices.length === 0) return;
+    setIsPlaying(false);
+    setCurrentFrameIndex(target === "first" ? playbackFrameIndices[0] : playbackFrameIndices[playbackFrameIndices.length - 1]);
+  };
+
+  const stepPlaybackBy = (delta: -1 | 1) => {
+    if (playbackFrameIndices.length === 0) return;
+    setIsPlaying(false);
+    const currentPos = playbackFrameIndices.indexOf(currentFrameIndex);
+    const nextPos = currentPos === -1
+      ? (delta > 0 ? 0 : playbackFrameIndices.length - 1)
+      : Math.max(0, Math.min(playbackFrameIndices.length - 1, currentPos + delta));
+    setCurrentFrameIndex(playbackFrameIndices[nextPos]);
+  };
+
+  const handleSelectEveryNFrames = () => {
+    const stride = Math.max(1, Math.floor(selectionEveryN || 1));
+    const nextSelection = frames
+      .filter((_frame, index) => index % stride === 0)
+      .map((frame) => frame.index);
+    setSelectedFrames(nextSelection);
+    setLastSelectedIndex(nextSelection.length ? nextSelection[nextSelection.length - 1] : null);
+  };
+
+  const readFrameSignature = (frame: FrameInfo): Promise<Uint8Array> => {
+    if (!currentJobId) return Promise.reject(new Error("No active job"));
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const sampleSize = 16;
+        const canvas = document.createElement("canvas");
+        canvas.width = sampleSize;
+        canvas.height = sampleSize;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) {
+          reject(new Error("Canvas unavailable"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, sampleSize, sampleSize);
+        const data = ctx.getImageData(0, 0, sampleSize, sampleSize).data;
+        const signature = new Uint8Array(sampleSize * sampleSize * 3);
+        for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
+          signature[j] = data[i];
+          signature[j + 1] = data[i + 1];
+          signature[j + 2] = data[i + 2];
+        }
+        resolve(signature);
+      };
+      img.onerror = () => reject(new Error("Frame load failed"));
+      img.src = getFrameUrl(currentJobId, frame.name);
+    });
+  };
+
+  const frameSignatureDiff = (a: Uint8Array, b: Uint8Array) => {
+    const len = Math.min(a.length, b.length);
+    let total = 0;
+    for (let i = 0; i < len; i += 1) {
+      total += Math.abs(a[i] - b[i]);
+    }
+    return total / len;
+  };
+
+  const handleAutoSelectKeyframes = async () => {
+    if (frames.length === 0 || !currentJobId) return;
+    setIsPlaying(false);
+    setIsSelectingKeyframes(true);
+    setErrorMsg(null);
+    try {
+      const threshold = Math.max(1, keyframeThreshold);
+      const nextSelection: number[] = [frames[0].index];
+      let lastKeySignature = await readFrameSignature(frames[0]);
+
+      for (let i = 1; i < frames.length; i += 1) {
+        const signature = await readFrameSignature(frames[i]);
+        if (frameSignatureDiff(lastKeySignature, signature) >= threshold) {
+          nextSelection.push(frames[i].index);
+          lastKeySignature = signature;
+        }
+        if (i % 20 === 0) {
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+      }
+
+      const lastFrameIndex = frames[frames.length - 1].index;
+      if (!nextSelection.includes(lastFrameIndex)) {
+        nextSelection.push(lastFrameIndex);
+      }
+      setSelectedFrames(nextSelection);
+      setLastSelectedIndex(nextSelection[nextSelection.length - 1] ?? null);
+    } catch (e) {
+      console.error("Auto keyframe selection failed:", e);
+      setErrorMsg(t.keyframeSelectionFailed);
+    } finally {
+      setIsSelectingKeyframes(false);
     }
   };
 
@@ -921,10 +1049,9 @@ function App() {
           <div className="settings-section-title">{t.coreAlgorithm}</div>
           
           <div className="form-group">
-            <label>
+            <TooltipLabel help={t.paramHelp.sampleMethod} value={<span className="label-hint">sample_method</span>} className="tooltip-down">
               {t.sampleMethod}
-              <span className="label-hint">sample_method</span>
-            </label>
+            </TooltipLabel>
             <CustomSelect
               value={sampleMethod}
               onChange={(val) => setSampleMethod(val as any)}
@@ -938,10 +1065,9 @@ function App() {
           </div>
 
           <div className="form-group">
-            <label>
+            <TooltipLabel help={t.paramHelp.gridDimensions} value={<span className="label-hint">grid_size</span>} className="tooltip-down">
               {t.gridDimensions}
-              <span className="label-hint">grid_size</span>
-            </label>
+            </TooltipLabel>
             <div className="form-group-row">
               <input 
                 type="number" 
@@ -963,9 +1089,9 @@ function App() {
           </div>
 
           <div className="form-group">
-            <label>
-              {t.refineIntensity}: <span className="slider-val">{refineIntensity.toFixed(2)}</span>
-            </label>
+            <TooltipLabel help={t.paramHelp.refineIntensity} value={<span className="slider-val">{refineIntensity.toFixed(2)}</span>}>
+              {t.refineIntensity}
+            </TooltipLabel>
             <div className="slider-container">
               <input 
                 type="range" 
@@ -980,10 +1106,9 @@ function App() {
           </div>
 
           <div className="form-group">
-            <label>
+            <TooltipLabel help={t.paramHelp.voteFrames} value={<span className="label-hint">vote_frames</span>}>
               {t.voteFrames}
-              <span className="label-hint">vote_frames</span>
-            </label>
+            </TooltipLabel>
             <CustomSelect
               value={voteFrames}
               onChange={(val) => setVoteFrames(val)}
@@ -1001,9 +1126,9 @@ function App() {
           <div className="settings-section-title">{t.videoSizing}</div>
 
           <div className="form-group">
-            <label>
-              {t.outputUpscaleFactor}: <span className="slider-val">{outputScale}x</span>
-            </label>
+            <TooltipLabel help={t.paramHelp.outputScale} value={<span className="slider-val">{outputScale}x</span>}>
+              {t.outputUpscaleFactor}
+            </TooltipLabel>
             <div className="slider-container">
               <input 
                 type="range" 
@@ -1019,7 +1144,9 @@ function App() {
 
           <div className="form-group-row">
             <div className="form-group">
-              <label>{t.minPixelSize}</label>
+              <TooltipLabel help={t.paramHelp.minSize}>
+                {t.minPixelSize}
+              </TooltipLabel>
               <input 
                 type="number" 
                 value={minSize} 
@@ -1030,7 +1157,9 @@ function App() {
               />
             </div>
             <div className="form-group">
-              <label>{t.peakWidth}</label>
+              <TooltipLabel help={t.paramHelp.peakWidth}>
+                {t.peakWidth}
+              </TooltipLabel>
               <input 
                 type="number" 
                 value={peakWidth} 
@@ -1042,10 +1171,9 @@ function App() {
           </div>
 
           <div className="form-group">
-            <label>
+            <TooltipLabel help={t.paramHelp.frameStep} value={<span className="label-hint">every_n_frames</span>}>
               {t.frameSamplingStep}
-              <span className="label-hint">every_n_frames</span>
-            </label>
+            </TooltipLabel>
             <input 
               type="number" 
               value={everyNFrames} 
@@ -1058,7 +1186,9 @@ function App() {
           <div className="settings-section-title">{t.featureSwitches}</div>
 
           <div className="form-group toggle-group">
-            <label htmlFor="toggle-fix-square" style={{ cursor: "pointer" }}>{t.forceSquareAlignment}</label>
+            <TooltipLabel htmlFor="toggle-fix-square" style={{ cursor: "pointer" }} help={t.paramHelp.fixSquare}>
+              {t.forceSquareAlignment}
+            </TooltipLabel>
             <label className="toggle-switch">
               <input 
                 id="toggle-fix-square"
@@ -1072,7 +1202,9 @@ function App() {
           </div>
 
           <div className="form-group toggle-group">
-            <label htmlFor="toggle-adaptive-grid" style={{ cursor: "pointer" }}>{t.adaptiveGrid}</label>
+            <TooltipLabel htmlFor="toggle-adaptive-grid" style={{ cursor: "pointer" }} help={t.paramHelp.adaptiveGrid}>
+              {t.adaptiveGrid}
+            </TooltipLabel>
             <label className="toggle-switch">
               <input 
                 id="toggle-adaptive-grid"
@@ -1086,7 +1218,9 @@ function App() {
           </div>
 
           <div className="form-group toggle-group">
-            <label htmlFor="toggle-temporal-smoothing" style={{ cursor: "pointer" }}>{t.temporalSmoothing}</label>
+            <TooltipLabel htmlFor="toggle-temporal-smoothing" style={{ cursor: "pointer" }} help={t.paramHelp.temporalSmoothing}>
+              {t.temporalSmoothing}
+            </TooltipLabel>
             <label className="toggle-switch">
               <input 
                 id="toggle-temporal-smoothing"
@@ -1100,7 +1234,9 @@ function App() {
           </div>
 
           <div className="form-group toggle-group">
-            <label htmlFor="toggle-denoise" style={{ cursor: "pointer" }}>{t.denoise}</label>
+            <TooltipLabel htmlFor="toggle-denoise" style={{ cursor: "pointer" }} help={t.paramHelp.denoise}>
+              {t.denoise}
+            </TooltipLabel>
             <label className="toggle-switch">
               <input 
                 id="toggle-denoise"
@@ -1119,9 +1255,9 @@ function App() {
 
               {adaptiveGrid && (
                 <div className="form-group">
-                  <label>
-                    {t.gridBlend}: <span className="slider-val">{gridBlend.toFixed(2)}</span>
-                  </label>
+                  <TooltipLabel help={t.paramHelp.gridBlend} value={<span className="slider-val">{gridBlend.toFixed(2)}</span>}>
+                    {t.gridBlend}
+                  </TooltipLabel>
                   <div className="slider-container">
                     <input 
                       type="range" 
@@ -1139,9 +1275,9 @@ function App() {
               {temporalSmoothing && (
                 <>
                   <div className="form-group">
-                    <label>
-                      {t.temporalAlpha}: <span className="slider-val">{temporalAlpha.toFixed(2)}</span>
-                    </label>
+                    <TooltipLabel help={t.paramHelp.temporalAlpha} value={<span className="slider-val">{temporalAlpha.toFixed(2)}</span>}>
+                      {t.temporalAlpha}
+                    </TooltipLabel>
                     <div className="slider-container">
                       <input 
                         type="range" 
@@ -1156,9 +1292,9 @@ function App() {
                   </div>
 
                   <div className="form-group">
-                    <label>
-                      {t.sceneChangeThreshold}: <span className="slider-val">{sceneChangeThreshold.toFixed(0)}</span>
-                    </label>
+                    <TooltipLabel help={t.paramHelp.sceneThreshold} value={<span className="slider-val">{sceneChangeThreshold.toFixed(0)}</span>}>
+                      {t.sceneChangeThreshold}
+                    </TooltipLabel>
                     <div className="slider-container">
                       <input 
                         type="range" 
@@ -1176,9 +1312,9 @@ function App() {
 
               {denoise && (
                 <div className="form-group">
-                  <label>
-                    {t.denoiseStrength}: <span className="slider-val">{denoiseStrength.toFixed(1)}</span>
-                  </label>
+                  <TooltipLabel help={t.paramHelp.denoiseStrength} value={<span className="slider-val">{denoiseStrength.toFixed(1)}</span>}>
+                    {t.denoiseStrength}
+                  </TooltipLabel>
                   <div className="slider-container">
                     <input 
                       type="range" 
@@ -1452,12 +1588,17 @@ function App() {
 
                 <div className="background-controls">
                   <div className="form-group">
-                    <label>
+                    <TooltipLabel
+                      help={t.paramHelp.backgroundColor}
+                      value={
+                        <span className="label-hint">
+                          {autoBackground ? t.backgroundAuto : backgroundColor}
+                        </span>
+                      }
+                      className="tooltip-down"
+                    >
                       {t.backgroundColor}
-                      <span className="label-hint">
-                        {autoBackground ? t.backgroundAuto : backgroundColor}
-                      </span>
-                    </label>
+                    </TooltipLabel>
                     <label className="auto-bg-toggle">
                       <input
                         type="checkbox"
@@ -1496,9 +1637,9 @@ function App() {
                   </div>
 
                   <div className="form-group">
-                    <label>
-                      {t.backgroundThreshold}: <span className="slider-val">{backgroundThreshold.toFixed(0)}</span>
-                    </label>
+                    <TooltipLabel help={t.paramHelp.backgroundThreshold} value={<span className="slider-val">{backgroundThreshold.toFixed(0)}</span>}>
+                      {t.backgroundThreshold}
+                    </TooltipLabel>
                     <div className="slider-container">
                       <input
                         type="range"
@@ -1513,9 +1654,9 @@ function App() {
                   </div>
 
                   <div className="form-group">
-                    <label>
-                      {t.backgroundFeather}: <span className="slider-val">{backgroundFeather}px</span>
-                    </label>
+                    <TooltipLabel help={t.paramHelp.backgroundFeather} value={<span className="slider-val">{backgroundFeather}px</span>}>
+                      {t.backgroundFeather}
+                    </TooltipLabel>
                     <div className="slider-container">
                       <input
                         type="range"
@@ -1614,19 +1755,15 @@ function App() {
                             type="range"
                             min={0}
                             max={hasSelection ? sortedSelectedFrames.length - 1 : frames.length - 1}
-                            value={hasSelection ? (playbackPos === -1 ? 0 : playbackPos) : currentFrameIndex}
+                            value={playbackPos === -1 ? 0 : playbackPos}
                             onChange={(e) => {
                               setIsPlaying(false);
-                              if (hasSelection) {
-                                const pos = Math.min(
-                                  sortedSelectedFrames.length - 1,
-                                  Math.max(0, parseInt(e.target.value, 10))
-                                );
-                                const idx = sortedSelectedFrames[pos];
-                                if (idx !== undefined) setCurrentFrameIndex(idx);
-                              } else {
-                                setCurrentFrameIndex(parseInt(e.target.value, 10));
-                              }
+                              const pos = Math.min(
+                                playbackFrameIndices.length - 1,
+                                Math.max(0, parseInt(e.target.value, 10))
+                              );
+                              const idx = playbackFrameIndices[pos];
+                              if (idx !== undefined) setCurrentFrameIndex(idx);
                             }}
                           />
                           <span className="current-time-badge">
@@ -1638,18 +1775,21 @@ function App() {
 
                         {/* Control buttons */}
                         <div className="player-button-group">
-                          <div style={{ display: "flex", gap: "8px" }}>
-                            <button 
-                              className="btn-ctrl" 
-                              onClick={() => {
-                                setIsPlaying(false);
-                                setCurrentFrameIndex(0);
-                              }}
-                              title={t.restart}
-                            >
-                              <RefreshCw size={16} />
-                            </button>
-                          </div>
+                          <button 
+                            className="btn-ctrl" 
+                            onClick={() => jumpPlaybackTo("first")}
+                            title={t.firstFrame}
+                          >
+                            <SkipBack size={16} />
+                          </button>
+
+                          <button 
+                            className="btn-ctrl" 
+                            onClick={() => stepPlaybackBy(-1)}
+                            title={t.previousFrame}
+                          >
+                            <StepBack size={16} />
+                          </button>
 
                           <button 
                             className="btn-ctrl play-pause" 
@@ -1657,6 +1797,22 @@ function App() {
                             title={isPlaying ? t.pause : t.play}
                           >
                             {isPlaying ? <Pause size={20} /> : <Play size={20} style={{ transform: "translateX(1px)" }} />}
+                          </button>
+
+                          <button 
+                            className="btn-ctrl" 
+                            onClick={() => stepPlaybackBy(1)}
+                            title={t.nextFrame}
+                          >
+                            <StepForward size={16} />
+                          </button>
+
+                          <button 
+                            className="btn-ctrl" 
+                            onClick={() => jumpPlaybackTo("last")}
+                            title={t.lastFrame}
+                          >
+                            <SkipForward size={16} />
                           </button>
 
                           <div className="playback-speed">
@@ -1741,13 +1897,57 @@ function App() {
                   {/* Frame Sequence Thumbnails Column */}
                   <div className="thumbnails-container">
                     <div className="thumbnails-header" style={{ flexDirection: "column", gap: "6px", alignItems: "stretch" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span className="info-title">{t.frameListPng}</span>
-                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                          Selected: {selectedFrames.length}
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", gap: "8px", marginTop: "2px" }}>
+	                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+	                        <span className="info-title">{t.frameListPng}</span>
+	                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+	                          {t.selectedCount(selectedFrames.length)}
+	                        </span>
+	                      </div>
+	                      <div className="quick-select-panel">
+	                        <div className="quick-select-row">
+	                          <span>{t.selectEveryNLabel}</span>
+	                          <input
+	                            type="number"
+	                            min={1}
+	                            max={999}
+	                            value={selectionEveryN}
+	                            onChange={(e) => setSelectionEveryN(Math.max(1, parseInt(e.target.value, 10) || 1))}
+	                          />
+	                          <button
+	                            type="button"
+	                            className="thumbnails-action-btn"
+	                            onClick={handleSelectEveryNFrames}
+	                            disabled={frames.length === 0}
+	                          >
+	                            {t.applySelection}
+	                          </button>
+	                        </div>
+	                        <div className="quick-select-row">
+	                          <span>{t.keyframeThresholdLabel}: {keyframeThreshold}</span>
+	                          <input
+	                            type="range"
+	                            min={4}
+	                            max={64}
+	                            step={1}
+	                            value={keyframeThreshold}
+	                            onChange={(e) => setKeyframeThreshold(parseInt(e.target.value, 10))}
+	                          />
+	                          <button
+	                            type="button"
+	                            className="thumbnails-action-btn"
+	                            onClick={handleAutoSelectKeyframes}
+	                            disabled={isSelectingKeyframes || frames.length < 2}
+	                          >
+	                            {isSelectingKeyframes ? t.analyzingKeyframes : (
+	                              <>
+	                                <Wand2 size={11} />
+	                                {t.autoKeyframes}
+	                              </>
+	                            )}
+	                          </button>
+	                        </div>
+	                      </div>
+	                      <div style={{ display: "flex", gap: "8px", marginTop: "2px" }}>
                         <button
                           type="button"
                           className="thumbnails-action-btn"
@@ -1770,13 +1970,26 @@ function App() {
                       ref={thumbnailsContainerRef}
                       className="thumbnails-grid"
                     >
-                      {frames.map((frame, index) => {
-                        const isSelected = selectedFrames.includes(frame.index);
+                      <div
+                        style={{
+                          height: `${frames.length * thumbnailItemHeight}px`,
+                          position: "relative",
+                          width: "100%",
+                        }}
+                      >
+                      {visibleThumbnailFrames.map((frame, offset) => {
+                        const index = thumbnailStartIndex + offset;
+                        const isSelected = selectedFrameSet.has(frame.index);
                         return (
                           <div 
                             key={frame.name}
                             className={`thumbnail-card ${index === currentFrameIndex ? "active" : ""} ${isSelected ? "selected" : ""}`}
-                            style={{ position: "relative", cursor: "pointer" }}
+                            style={{
+                              cursor: "pointer",
+                              left: "50%",
+                              position: "absolute",
+                              top: `${index * thumbnailItemHeight}px`,
+                            }}
                             onClick={(e) => {
                               const target = e.target as HTMLElement;
                               if (target.closest(".thumb-select-box")) {
@@ -1856,6 +2069,7 @@ function App() {
                           </div>
                         );
                       })}
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -44,7 +44,9 @@ export interface JobStatusResponse {
   total_frames: number;
   current_frame: number;
   grid_size: { w: number; h: number } | null;
-  output_frames: string[];
+  output_frame_count: number;
+  latest_frame: string | null;
+  output_frames?: string[];
   error: string | null;
 }
 

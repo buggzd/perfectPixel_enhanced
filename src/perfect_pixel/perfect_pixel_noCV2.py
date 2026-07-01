@@ -1,4 +1,8 @@
+import logging
+
 import numpy as np
+
+_LOGGER = logging.getLogger(__name__)
 
 # ----------------------------
 # Small utilities (no cv2)
@@ -373,7 +377,7 @@ def estimate_grid_gradient(gray, rel_thr=0.2):
     scale_x = W / np.median(intervals_x)
     scale_y = H / np.median(intervals_y)
 
-    print(f"Detected grid size from gradient: ({scale_x:.2f}, {scale_y:.2f})")
+    _LOGGER.debug("Detected grid size from gradient: (%.2f, %.2f)", scale_x, scale_y)
 
     return int(round(scale_x)), int(round(scale_y))
 
@@ -383,18 +387,18 @@ def detect_grid_scale(image, peak_width=6, max_ratio=1.5, min_size=4.0):
 
     grid_w, grid_h =  estimate_grid_fft(gray, peak_width=peak_width)
     if grid_w is None or grid_h is None:
-        print("FFT-based grid estimation failed, fallback to gradient-based method.")
+        _LOGGER.debug("FFT-based grid estimation failed, fallback to gradient-based method.")
         grid_w, grid_h = estimate_grid_gradient(gray)
     else:
         pixel_size_x = W / grid_w
         pixel_size_y = H / grid_h
         max_pixel_size = 20.0
         if min(pixel_size_x, pixel_size_y) < min_size or max(pixel_size_x, pixel_size_y) > max_pixel_size or pixel_size_x / pixel_size_y > max_ratio or pixel_size_y / pixel_size_x > max_ratio:
-            print("Inconsistent grid size detected (FFT-based), fallback to gradient-based method.")
+            _LOGGER.debug("Inconsistent grid size detected (FFT-based), fallback to gradient-based method.")
             grid_w, grid_h = estimate_grid_gradient(gray)
 
     if grid_w is None or grid_h is None:
-        print("Gradient-based grid estimation failed.")
+        _LOGGER.debug("Gradient-based grid estimation failed.")
         return None, None
 
     pixel_size_x = W / grid_w
@@ -405,7 +409,7 @@ def detect_grid_scale(image, peak_width=6, max_ratio=1.5, min_size=4.0):
     else:   
         pixel_size = (pixel_size_x + pixel_size_y) / 2.0
 
-    print(f"Detected pixel size: {pixel_size:.2f}")
+    _LOGGER.debug("Detected pixel size: %.2f", pixel_size)
 
     grid_w = int(round(W / pixel_size))
     grid_h = int(round(H / pixel_size))
@@ -445,7 +449,7 @@ def get_perfect_pixel(image, sample_method="center", grid_size = None, min_size 
     else:
         scale_col, scale_row = detect_grid_scale(image, peak_width=peak_width, max_ratio=1.5, min_size=min_size)
         if scale_col is None or scale_row is None:
-            print("Failed to estimate grid size.")
+            _LOGGER.debug("Failed to estimate grid size.")
             return None, None, image
 
     size_x = int(round(scale_col))
@@ -485,7 +489,7 @@ def get_perfect_pixel(image, sample_method="center", grid_size = None, min_size 
                 # add one col by duplicating first col
                 scaled_image = np.concatenate([scaled_image[:, :1], scaled_image], axis=1)
     refined_size_y, refined_size_x = scaled_image.shape[:2]
-    print(f"Refined grid size: ({refined_size_x}, {refined_size_y})")
+    _LOGGER.debug("Refined grid size: (%s, %s)", refined_size_x, refined_size_y)
 
     # debug
     if debug:

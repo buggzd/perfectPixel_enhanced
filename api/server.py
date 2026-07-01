@@ -88,9 +88,11 @@ class Job:
     # --- export tasks keyed by export_id ---
     exports: Dict[str, "ExportJob"] = field(default_factory=dict)
 
-    def snapshot(self) -> dict:
+    def snapshot(self, *, include_output_frames: bool = False) -> dict:
         with self._lock:
-            return {
+            output_count = len(self.output_frames)
+            latest_frame = self.output_frames[-1] if output_count else None
+            data = {
                 "id": self.job_id,
                 "status": self.status,
                 "stage": self.stage,
@@ -98,9 +100,13 @@ class Job:
                 "total_frames": self.total_frames,
                 "current_frame": self.current_frame,
                 "grid_size": self.grid_size,
-                "output_frames": list(self.output_frames),
+                "output_frame_count": output_count,
+                "latest_frame": latest_frame,
                 "error": self.error,
             }
+            if include_output_frames:
+                data["output_frames"] = list(self.output_frames)
+            return data
 
 
 @dataclass
@@ -250,7 +256,7 @@ def health():
 
 
 @app.post("/api/jobs")
-async def create_job(
+def create_job(
     video: UploadFile = File(...),
     sample_method: str = Form("majority"),
     grid_size_w: Optional[int] = Form(None),
@@ -353,8 +359,8 @@ async def create_job(
 
 
 @app.get("/api/jobs/{job_id}")
-def get_job(job_id: str):
-    return _get_job(job_id).snapshot()
+def get_job(job_id: str, include_output_frames: bool = False):
+    return _get_job(job_id).snapshot(include_output_frames=include_output_frames)
 
 
 @app.get("/api/jobs/{job_id}/frames")

@@ -547,30 +547,27 @@ def export_gif(
     )
     bg_bgra = _parse_color(size.get("background", "#00000000"))
 
-    # read + resize (progress 0 → 0.9)
-    frames, _w, _h, has_alpha = _load_resized_frames(
-        frames_dir, output_frames, indices, size,
-        on_progress=on_progress, progress_scale=0.9, progress_floor=0.0,
-    )
-
-    # GIF has no full alpha → flatten onto background (still BGR, cv2 order).
-    flat_frames = [_composite_on_background(f, bg_bgra) for f in frames]
-
-    # imageio/pillow interpret the array as RGB, but our frames are cv2 BGR —
-    # convert before encoding so red/blue aren't swapped.
-    rgb_frames = [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in flat_frames]
-
     duration_ms = max(20, int(round(1000.0 / float(fps))))
     try:
-        import imageio.v3 as iio
-        iio.imwrite(
+        import imageio.v2 as iio
+
+        src_w, src_h = _frame_dims(frames_dir, output_frames[indices[0]])
+        with iio.get_writer(
             output_path,
-            np.stack(rgb_frames, axis=0) if rgb_frames else np.zeros((1, 1, 3), np.uint8),
-            plugin="pillow",
+            mode="I",
             duration=duration_ms,
             loop=0 if loop else 1,
-            mode="RGB",
-        )
+        ) as writer:
+            total = len(indices)
+            for i, src_idx in enumerate(indices):
+                img = _read_frame(frames_dir, output_frames[src_idx])
+                resized = resize_frame(img, size, src_w, src_h)
+                flat = _composite_on_background(resized, bg_bgra)
+                # imageio/pillow interpret the array as RGB, but our frames are
+                # cv2 BGR — convert before encoding so red/blue aren't swapped.
+                writer.append_data(cv2.cvtColor(flat, cv2.COLOR_BGR2RGB))
+                if on_progress is not None:
+                    _report_fraction(on_progress, (i + 1) / total if total else 1.0)
     except Exception as exc:  # noqa: BLE001
         raise ExportError(f"GIF encoding failed: {exc}")
 
@@ -578,7 +575,7 @@ def export_gif(
         _report_fraction(on_progress, 1.0)
 
     return {"written_files": [output_path], "fps": fps, "loop": loop,
-            "frame_count": len(rgb_frames)}
+            "frame_count": len(indices)}
 
 
 def export_sprite_sheet_4x4(
