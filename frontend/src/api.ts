@@ -39,6 +39,7 @@ export interface JobOptions {
 export interface JobStatusResponse {
   id: string;
   status: "queued" | "running" | "done" | "error";
+  stage: "queued" | "pixelating" | "background_removal" | "done" | "error";
   progress: number;
   total_frames: number;
   current_frame: number;
@@ -119,7 +120,6 @@ export async function createJob(
   if (options.denoise_strength !== undefined) {
     formData.append("denoise_strength", options.denoise_strength.toString());
   }
-
   const res = await fetch(`${getBaseUrl()}/api/jobs`, {
     method: "POST",
     body: formData,
@@ -160,6 +160,55 @@ export async function getJobFrames(jobId: string): Promise<ListFramesResponse> {
  */
 export function getFrameUrl(jobId: string, frameName: string): string {
   return `${getBaseUrl()}/api/jobs/${jobId}/frames/${frameName}`;
+}
+
+export function getBackgroundPreviewUrl(
+  jobId: string,
+  frameName: string,
+  backgroundColor: string | null,
+  threshold: number,
+  feather: number,
+  blockSize: number,
+  edgeConnected: boolean = true
+): string {
+  const params = new URLSearchParams({
+    threshold: threshold.toString(),
+    feather: feather.toString(),
+    block_size: blockSize.toString(),
+    edge_connected: edgeConnected.toString(),
+  });
+  if (backgroundColor) {
+    params.set("background_color", backgroundColor);
+  }
+  return `${getBaseUrl()}/api/jobs/${jobId}/background-preview/${frameName}?${params.toString()}`;
+}
+
+export async function applyBackgroundRemoval(
+  jobId: string,
+  request: {
+    background_color: string | null;
+    threshold: number;
+    feather: number;
+    block_size: number;
+    edge_connected?: boolean;
+  }
+): Promise<{ job_id: string; status: string }> {
+  const res = await fetch(`${getBaseUrl()}/api/jobs/${jobId}/background-removal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      threshold: request.threshold,
+      feather: request.feather,
+      block_size: request.block_size,
+      edge_connected: request.edge_connected ?? true,
+      ...(request.background_color ? { background_color: request.background_color } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to apply background removal (${res.status})`);
+  }
+  return res.json();
 }
 
 /**
@@ -285,4 +334,3 @@ export async function getExportStatus(
   }
   return res.json();
 }
-

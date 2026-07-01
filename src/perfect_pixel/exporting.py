@@ -283,6 +283,7 @@ def resize_frame(
     background has alpha.
     """
     out_w, out_h, bg_bgra, has_alpha = compute_export_size(size, source_w, source_h)
+    has_alpha = has_alpha or (img.ndim == 3 and img.shape[2] == 4)
     mode = size.get("mode", "source")
 
     if mode == "source":
@@ -369,9 +370,11 @@ def render_filename(template: str, variables: Dict[str, Any]) -> str:
 
 def _read_frame(frames_dir: str, frame_name: str) -> np.ndarray:
     path = os.path.join(frames_dir, frame_name)
-    img = cv2.imread(path, cv2.IMREAD_COLOR)
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     if img is None:
         raise ExportError(f"failed to read processed frame: {frame_name}")
+    if img.ndim == 2:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     return img
 
 
@@ -489,6 +492,7 @@ def _load_resized_frames(
     frames: List[np.ndarray] = []
     for i, src_idx in enumerate(indices):
         img = _read_frame(frames_dir, output_frames[src_idx])
+        has_alpha = has_alpha or (img.ndim == 3 and img.shape[2] == 4)
         frames.append(resize_frame(img, size, src_w, src_h))
         if on_progress is not None:
             done = progress_floor + progress_scale * ((i + 1) / total if total else 1.0)
@@ -611,6 +615,8 @@ def export_sprite_sheet_4x4(
 
     src_w, src_h = _frame_dims(frames_dir, output_frames[indices[0]])
     out_w, out_h, bg_bgra, has_alpha = compute_export_size(size, src_w, src_h)
+    first = _read_frame(frames_dir, output_frames[indices[0]])
+    has_alpha = has_alpha or (first.ndim == 3 and first.shape[2] == 4)
     channels = 4 if has_alpha else 3
     canvas = np.full((out_h * 4, out_w * 4, channels), bg_bgra[:channels], dtype=np.uint8)
 

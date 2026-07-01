@@ -909,6 +909,150 @@ input:checked + .toggle-slider:before {
   animation: fadeIn 0.4s ease;
 }
 
+.background-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  animation: fadeIn 0.4s ease;
+}
+
+.background-layout {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--glass-shadow);
+  border-radius: 8px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.background-preview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.background-preview-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.background-preview {
+  aspect-ratio: 1 / 1;
+  min-height: 260px;
+}
+
+.background-controls {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.color-control-row {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.auto-bg-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.auto-bg-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent-green);
+  cursor: pointer;
+}
+
+.eyedropper-btn {
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all var(--transition-fast);
+}
+
+.eyedropper-btn:hover:not(:disabled),
+.eyedropper-btn.active {
+  color: #121212;
+  border-color: var(--accent-green);
+  background: var(--accent-green);
+}
+
+.eyedropper-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.player-frame-img.is-picking-color {
+  cursor: crosshair;
+}
+
+.color-control-row input[type="color"] {
+  width: 52px;
+  height: 40px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  cursor: pointer;
+}
+
+.background-controls .scrubber-container,
+.background-actions,
+.background-mask-info {
+  grid-column: 1 / -1;
+}
+
+.background-mask-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.background-mask-info strong {
+  font-family: var(--font-mono);
+  color: var(--accent-green);
+}
+
+.background-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
 .viewer-header {
   display: flex;
   justify-content: space-between;
@@ -972,7 +1116,14 @@ input:checked + .toggle-slider:before {
   position: relative;
   width: 100%;
   aspect-ratio: 16/9;
-  background: #000000;
+  background-color: #141414;
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.08) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.08) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--border-color);
@@ -1186,7 +1337,14 @@ input:checked + .toggle-slider:before {
   width: 180px; /* Fits the 280px sidebar (minus padding) beautifully */
   height: 101px; /* 16:9 ratio to match preview viewport */
   flex-shrink: 0;
-  background: #121212;
+  background-color: #141414;
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.08) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.08) 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   overflow: hidden;

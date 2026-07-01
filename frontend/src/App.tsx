@@ -6,6 +6,8 @@ import {
   getJobStatus,
   getJobFrames,
   getFrameUrl,
+  getBackgroundPreviewUrl,
+  applyBackgroundRemoval,
   deleteJob,
   getBaseUrl,
   setBaseUrl,
@@ -25,7 +27,9 @@ import {
   Sparkles, 
   RefreshCw, 
   ArrowLeft, 
-  Download
+  Download,
+  Eraser,
+  Pipette
 } from "lucide-react";
 import "./App.css";
 import { translations, Language } from "./i18n";
@@ -187,6 +191,14 @@ function App() {
   const [loopPlayback] = useState<boolean>(true);
   const [selectedFrames, setSelectedFrames] = useState<number[]>([]);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+  const [reviewStep, setReviewStep] = useState<"background" | "frames">("background");
+  const [autoBackground, setAutoBackground] = useState<boolean>(true);
+  const [backgroundColor, setBackgroundColor] = useState<string>("#000000");
+  const [backgroundThreshold, setBackgroundThreshold] = useState<number>(30.0);
+  const [backgroundFeather, setBackgroundFeather] = useState<number>(0);
+  const [isPickingBackground, setIsPickingBackground] = useState<boolean>(false);
+  const [isApplyingBackground, setIsApplyingBackground] = useState<boolean>(false);
+  const backgroundSourceImgRef = useRef<HTMLImageElement>(null);
 
   // When frames are selected, playback (scrubber + count + play loop) is
   // confined to that subset. Sorted selected frame indices form the active
@@ -200,6 +212,7 @@ function App() {
     ? sortedSelectedFrames.indexOf(currentFrameIndex)
     : currentFrameIndex;
   const playbackCount = hasSelection ? sortedSelectedFrames.length : frames.length;
+  const backgroundBlockSize = Math.max(1, outputScale);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   
   // App error states
@@ -383,15 +396,18 @@ function App() {
           }
 
           if (status.status === "done") {
-            if (pollIntervalRef.current) {
-              clearInterval(pollIntervalRef.current);
-              pollIntervalRef.current = null;
-            }
             // Fetch complete final list just to be sure
             const finalFrames = await getJobFrames(currentJobId);
             const sortedFrames = [...finalFrames.frames].sort((a, b) => a.index - b.index);
             setFrames(sortedFrames);
             setCurrentFrameIndex(0);
+            if (isApplyingBackground || status.stage === "background_removal") {
+              setIsApplyingBackground(false);
+              setReviewStep("frames");
+            } else if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
           } else if (status.status === "error") {
             if (pollIntervalRef.current) {
               clearInterval(pollIntervalRef.current);
@@ -415,7 +431,7 @@ function App() {
         clearInterval(pollIntervalRef.current);
       }
     };
-  }, [currentJobId]);
+  }, [currentJobId, isApplyingBackground]);
 
   // Programmatic scroll: place the active frame in the 2nd visible slot,
   // keeping the previous frame visible above it. The first frame clamps to the
@@ -666,6 +682,7 @@ function App() {
     setSelectedFrames([]);
     setLastSelectedIndex(null);
     setCurrentFrameIndex(0);
+    setReviewStep("background");
     setIsPlaying(false);
 
     const options: JobOptions = {
@@ -713,8 +730,70 @@ function App() {
       setSelectedFrames([]);
       setLastSelectedIndex(null);
       setCurrentFrameIndex(0);
+      setReviewStep("background");
       setIsPlaying(false);
       setErrorMsg(null);
+    }
+  };
+
+  const handleSkipBackground = () => {
+    setReviewStep("frames");
+    setCurrentFrameIndex(0);
+  };
+
+  const handlePickBackgroundColor = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!isPickingBackground) return;
+    const img = backgroundSourceImgRef.current;
+    if (!img || img.naturalWidth === 0 || img.naturalHeight === 0) return;
+
+    const rect = img.getBoundingClientRect();
+    const x = Math.min(
+      img.naturalWidth - 1,
+      Math.max(0, Math.floor(((e.clientX - rect.left) / rect.width) * img.naturalWidth))
+    );
+    const y = Math.min(
+      img.naturalHeight - 1,
+      Math.max(0, Math.floor(((e.clientY - rect.top) / rect.height) * img.naturalHeight))
+    );
+
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+
+    try {
+      ctx.drawImage(img, 0, 0);
+      const [r, g, b] = ctx.getImageData(x, y, 1, 1).data;
+      const hex = `#${[r, g, b]
+        .map((v) => v.toString(16).padStart(2, "0"))
+        .join("")}`;
+      setBackgroundColor(hex);
+      setAutoBackground(false);
+      setIsPickingBackground(false);
+    } catch (err) {
+      console.error("Failed to sample background color:", err);
+      setErrorMsg(t.backgroundPickFailed);
+      setIsPickingBackground(false);
+    }
+  };
+
+  const handleApplyBackgroundRemoval = async () => {
+    if (!currentJobId) return;
+    setIsApplyingBackground(true);
+    setErrorMsg(null);
+    try {
+      await applyBackgroundRemoval(currentJobId, {
+        background_color: autoBackground ? null : backgroundColor,
+        threshold: backgroundThreshold,
+        feather: backgroundFeather,
+        block_size: backgroundBlockSize,
+        edge_connected: true,
+      });
+    } catch (e: any) {
+      setErrorMsg(e.message || t.backgroundRemovalFailed);
+      setIsApplyingBackground(false);
+    } finally {
     }
   };
 
@@ -1113,6 +1192,7 @@ function App() {
                   </div>
                 </div>
               )}
+
             </>
           )}
 
@@ -1250,7 +1330,7 @@ function App() {
           )}
 
           {/* STATE 3: PROCESSING PROGRESS TRACKER */}
-          {currentJobId && jobStatus && jobStatus.status !== "done" && jobStatus.status !== "error" && (
+          {currentJobId && jobStatus && jobStatus.status !== "done" && jobStatus.status !== "error" && jobStatus.stage !== "background_removal" && (
             <div className="process-card">
               <div className="process-header">
                 <div className="process-title-area">
@@ -1314,8 +1394,184 @@ function App() {
             </div>
           )}
 
+          {/* STATE 3.5: BACKGROUND REMOVAL POST-PROCESSING */}
+          {currentJobId && jobStatus && reviewStep === "background" && frames.length > 0 && (jobStatus.status === "done" || jobStatus.stage === "background_removal") && (
+            <div className="background-panel">
+              <div className="viewer-header">
+                <button className="back-home-btn" onClick={handleGoBack}>
+                  <ArrowLeft size={14} />
+                  {t.backUploadNew}
+                </button>
+                <div className="viewer-title">
+                  <h2>{t.backgroundPanelTitle}</h2>
+                  <span className="process-job-id">{t.backgroundPanelSubtitle}</span>
+                </div>
+                <div className="status-badge done">
+                  <Eraser size={12} />
+                  {t.postProcess}
+                </div>
+              </div>
+
+              <div className="background-layout">
+                <div className="background-preview-grid">
+                  <div className="background-preview-column">
+                    <span className="info-title">{t.originalFrame}</span>
+                    <div className="player-viewport background-preview">
+                      <img
+                        ref={backgroundSourceImgRef}
+                        crossOrigin="anonymous"
+                        src={getFrameUrl(currentJobId, frames[currentFrameIndex].name)}
+                        alt="Original processed frame"
+                        className={`player-frame-img ${isPickingBackground ? "is-picking-color" : ""}`}
+                        onClick={handlePickBackgroundColor}
+                      />
+                      {isPickingBackground && (
+                        <div className="viewport-overlay">{t.pickBackgroundHint}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="background-preview-column">
+                    <span className="info-title">{t.backgroundPreview}</span>
+                    <div className="player-viewport background-preview">
+                      <img
+                        src={getBackgroundPreviewUrl(
+                          currentJobId,
+                          frames[currentFrameIndex].name,
+                          autoBackground ? null : backgroundColor,
+                          backgroundThreshold,
+                          backgroundFeather,
+                          backgroundBlockSize,
+                          true
+                        )}
+                        alt="Background removal preview"
+                        className="player-frame-img"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="background-controls">
+                  <div className="form-group">
+                    <label>
+                      {t.backgroundColor}
+                      <span className="label-hint">
+                        {autoBackground ? t.backgroundAuto : backgroundColor}
+                      </span>
+                    </label>
+                    <label className="auto-bg-toggle">
+                      <input
+                        type="checkbox"
+                        checked={autoBackground}
+                        onChange={(e) => setAutoBackground(e.target.checked)}
+                        disabled={isApplyingBackground}
+                      />
+                      {t.backgroundAutoDetect}
+                    </label>
+                    <button
+                      type="button"
+                      className={`eyedropper-btn ${isPickingBackground ? "active" : ""}`}
+                      onClick={() => {
+                        setAutoBackground(false);
+                        setIsPickingBackground((prev) => !prev);
+                      }}
+                      disabled={isApplyingBackground}
+                    >
+                      <Pipette size={14} />
+                      {t.pickBackgroundColor}
+                    </button>
+                    <div className="color-control-row" style={autoBackground ? { opacity: 0.4, pointerEvents: "none" } : undefined}>
+                      <input
+                        type="color"
+                        value={backgroundColor}
+                        onChange={(e) => setBackgroundColor(e.target.value)}
+                        disabled={isApplyingBackground || autoBackground}
+                      />
+                      <input
+                        type="text"
+                        value={backgroundColor}
+                        onChange={(e) => setBackgroundColor(e.target.value)}
+                        disabled={isApplyingBackground || autoBackground}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>
+                      {t.backgroundThreshold}: <span className="slider-val">{backgroundThreshold.toFixed(0)}</span>
+                    </label>
+                    <div className="slider-container">
+                      <input
+                        type="range"
+                        min="0"
+                        max="120"
+                        step="2"
+                        value={backgroundThreshold}
+                        onChange={(e) => setBackgroundThreshold(parseFloat(e.target.value))}
+                        disabled={isApplyingBackground}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>
+                      {t.backgroundFeather}: <span className="slider-val">{backgroundFeather}px</span>
+                    </label>
+                    <div className="slider-container">
+                      <input
+                        type="range"
+                        min="0"
+                        max="8"
+                        step="1"
+                        value={backgroundFeather}
+                        onChange={(e) => setBackgroundFeather(parseInt(e.target.value, 10))}
+                        disabled={isApplyingBackground}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="background-mask-info">
+                    <span>{t.backgroundBlockUnit}</span>
+                    <strong>{backgroundBlockSize} × {backgroundBlockSize}</strong>
+                    <span>{t.backgroundEdgeLocked}</span>
+                  </div>
+
+                  <div className="scrubber-container">
+                    <input
+                      type="range"
+                      min={0}
+                      max={frames.length - 1}
+                      value={currentFrameIndex}
+                      onChange={(e) => setCurrentFrameIndex(parseInt(e.target.value, 10))}
+                      disabled={isApplyingBackground}
+                    />
+                    <span className="current-time-badge">{currentFrameIndex + 1} / {frames.length}</span>
+                  </div>
+
+                  <div className="background-actions">
+                    <button className="cancel-btn" onClick={handleSkipBackground} disabled={isApplyingBackground}>
+                      {t.skipBackground}
+                    </button>
+                    <button className="submit-btn" onClick={handleApplyBackgroundRemoval} disabled={isApplyingBackground}>
+                      {isApplyingBackground ? (
+                        <>
+                          <span className="spinner" />
+                          {t.applyingBackground}
+                        </>
+                      ) : (
+                        <>
+                          <Eraser size={18} />
+                          {t.applyBackgroundAll}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* STATE 4: PLAYBACK / REVIEW */}
-          {currentJobId && jobStatus && (jobStatus.status === "done" || (jobStatus.status === "error" && frames.length > 0)) && (
+          {currentJobId && jobStatus && reviewStep === "frames" && (jobStatus.status === "done" || (jobStatus.status === "error" && frames.length > 0)) && (
             <div className="viewer-container">
               <div className="viewer-header">
                 <button className="back-home-btn" onClick={handleGoBack}>

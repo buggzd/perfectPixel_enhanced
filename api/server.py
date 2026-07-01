@@ -30,9 +30,10 @@ if _SRC_DIR not in sys.path:
 import cv2  # noqa: E402
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
+from fastapi.responses import FileResponse, JSONResponse, Response  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
+from perfect_pixel.background import remove_background_from_frames  # noqa: E402
 from perfect_pixel.exporting import (  # noqa: E402
     ExportError,
     VALID_EXPORT_FORMATS,
@@ -68,6 +69,7 @@ class Job:
     work_dir: str
     frames_dir: str
     status: str = "queued"          # queued | running | done | error
+    stage: str = "queued"           # queued | pixelating | background_removal | done | error
     progress: float = 0.0           # 0..1
     total_frames: int = 0
     current_frame: int = 0
@@ -91,6 +93,7 @@ class Job:
             return {
                 "id": self.job_id,
                 "status": self.status,
+                "stage": self.stage,
                 "progress": round(self.progress, 4),
                 "total_frames": self.total_frames,
                 "current_frame": self.current_frame,
@@ -180,6 +183,7 @@ def _run_job(
     try:
         with job._lock:
             job.status = "running"
+            job.stage = "pixelating"
 
         result = process_video(
             video_path,
@@ -210,6 +214,7 @@ def _run_job(
             job.current_frame = result["total_frames"]
             job.progress = 1.0
             job.status = "done"
+            job.stage = "done"
             # Record processed frame dimensions for export sizing, read from
             # the first written frame (all output frames share dimensions).
             if result["output_frames"]:
@@ -221,6 +226,7 @@ def _run_job(
     except Exception as exc:  # noqa: BLE001
         with job._lock:
             job.status = "error"
+            job.stage = "error"
             job.error = str(exc) if not job.cancel_flag.is_set() else "cancelled"
 
 
@@ -283,7 +289,6 @@ async def create_job(
         raise HTTPException(status_code=400, detail="vote_frames must be >= 0")
     if denoise_strength < 0:
         raise HTTPException(status_code=400, detail="denoise_strength must be >= 0")
-
     grid_size = None
     if grid_size_w is not None and grid_size_h is not None:
         if grid_size_w <= 0 or grid_size_h <= 0:
@@ -379,6 +384,122 @@ def get_frame(job_id: str, name: str):
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="frame not found")
     return FileResponse(path, media_type="image/png")
+
+
+@app.get("/api/jobs/{job_id}/background-preview/{name}")
+def preview_background_removed_frame(
+    job_id: str,
+    name: str,
+    background_color: Optional[str] = None,
+    threshold: float = 30.0,
+    feather: int = 0,
+    block_size: int = 1,
+    edge_connected: bool = True,
+):
+    job = _get_job(job_id)
+    if "/" in name or "\\" in name or not name.lower().endswith(".png"):
+        raise HTTPException(status_code=400, detail="invalid frame name")
+    if threshold < 0:
+        raise HTTPException(status_code=400, detail="threshold must be >= 0")
+    if feather < 0 or feather > 8:
+        raise HTTPException(status_code=400, detail="feather must be in [0, 8]")
+    if block_size < 1:
+        raise HTTPException(status_code=400, detail="block_size must be >= 1")
+    path = os.path.join(job.frames_dir, name)
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise HTTPException(status_code=404, detail="frame not found")
+    try:
+        if background_color:
+            from perfect_pixel.background import parse_bgr_color
+            parse_bgr_color(background_color)
+        from perfect_pixel.background import remove_background_bgra
+        out = remove_background_bgra(
+            img,
+            background_color=background_color,
+            threshold=threshold,
+            feather=feather,
+            block_size=block_size,
+            edge_connected=edge_connected,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    ok, encoded = cv2.imencode(".png", out)
+    if not ok:
+        raise HTTPException(status_code=500, detail="failed to encode preview")
+    return Response(content=encoded.tobytes(), media_type="image/png")
+
+
+class BackgroundRemovalRequest(BaseModel):
+    background_color: Optional[str] = None
+    threshold: float = 30.0
+    feather: int = 0
+    block_size: int = 1
+    edge_connected: bool = True
+
+
+@app.post("/api/jobs/{job_id}/background-removal")
+def apply_background_removal(job_id: str, req: BackgroundRemovalRequest):
+    job = _get_job(job_id)
+    if req.threshold < 0:
+        raise HTTPException(status_code=400, detail="threshold must be >= 0")
+    if req.feather < 0 or req.feather > 8:
+        raise HTTPException(status_code=400, detail="feather must be in [0, 8]")
+    if req.block_size < 1:
+        raise HTTPException(status_code=400, detail="block_size must be >= 1")
+    if req.background_color:
+        try:
+            from perfect_pixel.background import parse_bgr_color
+            parse_bgr_color(req.background_color)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    with job._lock:
+        if job.status != "done":
+            raise HTTPException(
+                status_code=409,
+                detail=f"job must be done before background removal (status={job.status})",
+            )
+        job.status = "running"
+        job.stage = "background_removal"
+        job.progress = 0.0
+        job.current_frame = 0
+        job.total_frames = len(job.output_frames)
+
+    def on_progress(current: int, total: int) -> None:
+        if job.cancel_flag.is_set():
+            raise RuntimeError("cancelled")
+        with job._lock:
+            job.current_frame = current
+            job.total_frames = total
+            job.progress = current / total if total > 0 else 1.0
+
+    def worker() -> None:
+        try:
+            remove_background_from_frames(
+                job.frames_dir,
+                job.output_frames,
+                background_color=req.background_color,
+                threshold=req.threshold,
+                feather=req.feather,
+                block_size=req.block_size,
+                edge_connected=req.edge_connected,
+                progress_callback=on_progress,
+            )
+            with job._lock:
+                job.status = "done"
+                job.stage = "done"
+                job.progress = 1.0
+                job.current_frame = job.total_frames
+        except Exception as exc:  # noqa: BLE001
+            with job._lock:
+                job.status = "error"
+                job.stage = "error"
+                job.error = str(exc) if not job.cancel_flag.is_set() else "cancelled"
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    return {"job_id": job_id, "status": job.status}
 
 
 @app.delete("/api/jobs/{job_id}")
