@@ -1590,7 +1590,7 @@ input:checked + .toggle-slider:before {
               box-shadow 0.28s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   opacity: 0.4; /* Dim inactive frames for cover-flow contrast */
-  transform: translateX(-50%) scale(0.92);
+  transform: scale(0.92);
 }
 
 .thumbnail-card img {
@@ -1603,14 +1603,14 @@ input:checked + .toggle-slider:before {
 .thumbnail-card:hover {
   border-color: var(--text-secondary);
   opacity: 0.7;
-  transform: translateX(-50%) scale(0.96);
+  transform: scale(0.96);
 }
 
 .thumbnail-card.active {
   border-color: var(--accent-green);
   box-shadow: 0 0 15px rgba(30, 215, 96, 0.35);
   opacity: 1; /* Highlight active frame */
-  transform: translateX(-50%) scale(1.08); /* Pop out active frame */
+  transform: scale(1.08); /* Pop out active frame */
 }
 
 .thumb-idx {
