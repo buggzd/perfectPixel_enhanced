@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   checkHealth,
+  analyzeJobKeyframes,
   createJob,
   getJobStatus,
   getJobFrames,
@@ -32,8 +33,7 @@ import {
   ArrowLeft, 
   Download,
   Eraser,
-  Pipette,
-  Wand2
+  Pipette
 } from "lucide-react";
 import "./App.css";
 import { translations, Language } from "./i18n";
@@ -225,8 +225,9 @@ function App() {
   const [selectedFrames, setSelectedFrames] = useState<number[]>([]);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [selectionEveryN, setSelectionEveryN] = useState<number>(4);
-  const [keyframeThreshold, setKeyframeThreshold] = useState<number>(18);
-  const [isSelectingKeyframes, setIsSelectingKeyframes] = useState<boolean>(false);
+  const [keyframeThreshold, setKeyframeThreshold] = useState<number>(8);
+  const [keyframeMethod, setKeyframeMethod] = useState<"adjacent" | "flow">("adjacent");
+  const [isAnalyzingKeyframes, setIsAnalyzingKeyframes] = useState<boolean>(false);
   const [reviewStep, setReviewStep] = useState<"background" | "frames">("background");
   const [autoBackground, setAutoBackground] = useState<boolean>(true);
   const [backgroundColor, setBackgroundColor] = useState<string>("#000000");
@@ -713,81 +714,32 @@ function App() {
     const nextSelection = frames
       .filter((_frame, index) => index % stride === 0)
       .map((frame) => frame.index);
+    setIsPlaying(false);
     setSelectedFrames(nextSelection);
     setLastSelectedIndex(nextSelection.length ? nextSelection[nextSelection.length - 1] : null);
   };
 
-  const readFrameSignature = (frame: FrameInfo): Promise<Uint8Array> => {
-    if (!currentJobId) return Promise.reject(new Error("No active job"));
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        const sampleSize = 16;
-        const canvas = document.createElement("canvas");
-        canvas.width = sampleSize;
-        canvas.height = sampleSize;
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
-        if (!ctx) {
-          reject(new Error("Canvas unavailable"));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, sampleSize, sampleSize);
-        const data = ctx.getImageData(0, 0, sampleSize, sampleSize).data;
-        const signature = new Uint8Array(sampleSize * sampleSize * 3);
-        for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
-          signature[j] = data[i];
-          signature[j + 1] = data[i + 1];
-          signature[j + 2] = data[i + 2];
-        }
-        resolve(signature);
-      };
-      img.onerror = () => reject(new Error("Frame load failed"));
-      img.src = getFrameUrl(currentJobId, frame.name);
-    });
-  };
-
-  const frameSignatureDiff = (a: Uint8Array, b: Uint8Array) => {
-    const len = Math.min(a.length, b.length);
-    let total = 0;
-    for (let i = 0; i < len; i += 1) {
-      total += Math.abs(a[i] - b[i]);
-    }
-    return total / len;
-  };
-
   const handleAutoSelectKeyframes = async () => {
-    if (frames.length === 0 || !currentJobId) return;
-    setIsPlaying(false);
-    setIsSelectingKeyframes(true);
+    if (!currentJobId || frames.length === 0) return;
+    setIsAnalyzingKeyframes(true);
     setErrorMsg(null);
+    setIsPlaying(false);
     try {
-      const threshold = Math.max(1, keyframeThreshold);
-      const nextSelection: number[] = [frames[0].index];
-      let lastKeySignature = await readFrameSignature(frames[0]);
-
-      for (let i = 1; i < frames.length; i += 1) {
-        const signature = await readFrameSignature(frames[i]);
-        if (frameSignatureDiff(lastKeySignature, signature) >= threshold) {
-          nextSelection.push(frames[i].index);
-          lastKeySignature = signature;
-        }
-        if (i % 20 === 0) {
-          await new Promise((resolve) => requestAnimationFrame(resolve));
-        }
-      }
-
-      const lastFrameIndex = frames[frames.length - 1].index;
-      if (!nextSelection.includes(lastFrameIndex)) {
-        nextSelection.push(lastFrameIndex);
-      }
+      const result = await analyzeJobKeyframes(currentJobId, {
+        threshold: keyframeThreshold,
+        method: keyframeMethod,
+      });
+      const nextFrames = [...result.frames].sort((a, b) => a.index - b.index);
+      setFrames(nextFrames);
+      const nextSelection = nextFrames
+        .filter((frame) => frame.is_keyframe)
+        .map((frame) => frame.index);
       setSelectedFrames(nextSelection);
       setLastSelectedIndex(nextSelection[nextSelection.length - 1] ?? null);
-    } catch (e) {
-      console.error("Auto keyframe selection failed:", e);
-      setErrorMsg(t.keyframeSelectionFailed);
+    } catch (e: any) {
+      setErrorMsg(e.message || t.keyframeSelectionFailed);
     } finally {
-      setIsSelectingKeyframes(false);
+      setIsAnalyzingKeyframes(false);
     }
   };
 
@@ -1032,20 +984,110 @@ function App() {
               className="lang-select-custom"
             />
           </div>
-          <div className="connection-status">
-            <div className={`status-dot ${isApiConnected ? "connected" : "disconnected"}`} />
-            <span>
-              {isApiConnected === null 
-                ? t.checkingServer 
-                : isApiConnected 
-                  ? t.backendConnected 
-                  : t.backendOffline}
-            </span>
-          </div>
         </div>
 
         {/* Configurations Form */}
-        <div ref={settingsFormRef} className="settings-form">
+        <div
+          ref={settingsFormRef}
+          className={`settings-form ${reviewStep === "frames" && currentJobId && frames.length > 0 ? "is-frame-selection-mode" : "is-config-mode"}`}
+        >
+          {reviewStep === "frames" && currentJobId && frames.length > 0 && (
+            <div className="frame-selection-sidebar">
+              <div className="settings-section-title panel-title-shimmer">{t.frameSelectionTitle}</div>
+
+              <div className="selection-summary-row">
+                <span>{t.totalFrames}</span>
+                <strong>{frames.length}</strong>
+              </div>
+              <div className="selection-summary-row">
+                <span>{t.selectedFrames}</span>
+                <strong>{selectedFrames.length}</strong>
+              </div>
+
+              <div className="form-group">
+                <TooltipLabel help={t.paramHelp.keyframeMethod}>
+                  {t.keyframeAlgorithm}
+                </TooltipLabel>
+                <CustomSelect
+                  value={keyframeMethod}
+                  onChange={(val) => setKeyframeMethod(val as "adjacent" | "flow")}
+                  options={[
+                    { value: "adjacent", label: t.keyframeAdjacent },
+                    { value: "flow", label: t.keyframeFlow },
+                  ]}
+                />
+              </div>
+
+              <div className="form-group">
+                <TooltipLabel help={t.paramHelp.keyframeThreshold} value={<span className="slider-val">{keyframeThreshold.toFixed(1)}</span>}>
+                  {t.keyframeDiffThreshold}
+                </TooltipLabel>
+                <div className="slider-container">
+                  <input
+                    type="range"
+                    min="0"
+                    max={keyframeMethod === "flow" ? "32" : "48"}
+                    step="0.5"
+                    value={keyframeThreshold}
+                    onChange={(e) => setKeyframeThreshold(parseFloat(e.target.value))}
+                  />
+                </div>
+              </div>
+
+              <div className="selection-note">
+                {t.keyframeSettingsNote}
+              </div>
+
+              <div className="form-group">
+                <label>{t.selectEveryNLabel}</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={999}
+                  value={selectionEveryN}
+                  onChange={(e) => setSelectionEveryN(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                />
+              </div>
+
+              <div className="selection-actions-two">
+                <button
+                  type="button"
+                  className="selection-secondary-btn"
+                  onClick={handleSelectEveryNFrames}
+                  disabled={frames.length === 0}
+                >
+                  {t.ruleSelectFrames}
+                  <span>1/{selectionEveryN}</span>
+                </button>
+                <button
+                  type="button"
+                  className="selection-primary-btn"
+                  onClick={handleAutoSelectKeyframes}
+                  disabled={isAnalyzingKeyframes || frames.length < 2}
+                >
+                  {isAnalyzingKeyframes ? <span className="spinner" /> : <Sparkles size={14} />}
+                  {isAnalyzingKeyframes ? t.analyzingKeyframes : t.autoSelectKeyframes}
+                </button>
+              </div>
+
+              {selectedFrames.length > 0 && (
+                <button
+                  type="button"
+                  className="selection-clear-btn"
+                  onClick={() => {
+                    setIsPlaying(false);
+                    setSelectedFrames([]);
+                    setLastSelectedIndex(null);
+                  }}
+                >
+                  {t.clearCurrentSelection}
+                </button>
+              )}
+            </div>
+          )}
+
+          {!(reviewStep === "frames" && currentJobId && frames.length > 0) && (
+          <>
           <div className="settings-section-title">{t.coreAlgorithm}</div>
           
           <div className="form-group">
@@ -1332,10 +1374,12 @@ function App() {
             </>
           )}
 
+          </>
+          )}
         </div>
 
         {/* Action Button inside Sidebar (Fixed at bottom) */}
-        {file && (
+        {file && !(reviewStep === "frames" && currentJobId && frames.length > 0) && (
           <div className="sidebar-actions">
             <button 
               className="submit-btn" 
@@ -1892,79 +1936,13 @@ function App() {
                   )}
                 </div>
 
-                {/* Info and download actions sidebar */}
                 <div className="player-sidebar">
-                  {/* Frame Sequence Thumbnails Column */}
                   <div className="thumbnails-container">
-                    <div className="thumbnails-header" style={{ flexDirection: "column", gap: "6px", alignItems: "stretch" }}>
-	                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-	                        <span className="info-title">{t.frameListPng}</span>
-	                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-	                          {t.selectedCount(selectedFrames.length)}
-	                        </span>
-	                      </div>
-	                      <div className="quick-select-panel">
-	                        <div className="quick-select-row">
-	                          <span>{t.selectEveryNLabel}</span>
-	                          <input
-	                            type="number"
-	                            min={1}
-	                            max={999}
-	                            value={selectionEveryN}
-	                            onChange={(e) => setSelectionEveryN(Math.max(1, parseInt(e.target.value, 10) || 1))}
-	                          />
-	                          <button
-	                            type="button"
-	                            className="thumbnails-action-btn"
-	                            onClick={handleSelectEveryNFrames}
-	                            disabled={frames.length === 0}
-	                          >
-	                            {t.applySelection}
-	                          </button>
-	                        </div>
-	                        <div className="quick-select-row">
-	                          <span>{t.keyframeThresholdLabel}: {keyframeThreshold}</span>
-	                          <input
-	                            type="range"
-	                            min={4}
-	                            max={64}
-	                            step={1}
-	                            value={keyframeThreshold}
-	                            onChange={(e) => setKeyframeThreshold(parseInt(e.target.value, 10))}
-	                          />
-	                          <button
-	                            type="button"
-	                            className="thumbnails-action-btn"
-	                            onClick={handleAutoSelectKeyframes}
-	                            disabled={isSelectingKeyframes || frames.length < 2}
-	                          >
-	                            {isSelectingKeyframes ? t.analyzingKeyframes : (
-	                              <>
-	                                <Wand2 size={11} />
-	                                {t.autoKeyframes}
-	                              </>
-	                            )}
-	                          </button>
-	                        </div>
-	                      </div>
-	                      <div style={{ display: "flex", gap: "8px", marginTop: "2px" }}>
-                        <button
-                          type="button"
-                          className="thumbnails-action-btn"
-                          style={{ flex: 1, textAlign: "center" }}
-                          onClick={() => setSelectedFrames(frames.map(f => f.index))}
-                        >
-                          {t.selectAll}
-                        </button>
-                        <button
-                          type="button"
-                          className="thumbnails-action-btn"
-                          style={{ flex: 1, textAlign: "center" }}
-                          onClick={() => setSelectedFrames([])}
-                        >
-                          {t.clearAll}
-                        </button>
-                      </div>
+                    <div className="thumbnails-header">
+                      <span className="info-title">{t.frameListPng}</span>
+                      <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                        {t.selectedCount(selectedFrames.length)}
+                      </span>
                     </div>
                     <div
                       ref={thumbnailsContainerRef}
@@ -2027,6 +2005,7 @@ function App() {
                             }}
                           >
                             <img src={getFrameUrl(currentJobId, frame.name)} alt="" loading="lazy" />
+                            {frame.is_keyframe && <span className="thumb-keyframe">{t.keyframeBadge}</span>}
                             <span className="thumb-idx">#{frame.index}</span>
                             <div 
                               className={`thumb-select-box ${isSelected ? "checked" : ""}`}

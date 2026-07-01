@@ -45,6 +45,9 @@ export interface JobStatusResponse {
   current_frame: number;
   grid_size: { w: number; h: number } | null;
   output_frame_count: number;
+  keyframe_count?: number;
+  keyframe_threshold?: number;
+  keyframe_method?: "adjacent" | "flow";
   latest_frame: string | null;
   output_frames?: string[];
   error: string | null;
@@ -53,10 +56,20 @@ export interface JobStatusResponse {
 export interface FrameInfo {
   name: string;
   index: number;
+  is_keyframe?: boolean;
+  change_score?: number;
+  keyframe_method?: "adjacent" | "flow";
 }
 
 export interface ListFramesResponse {
   frames: FrameInfo[];
+}
+
+export interface KeyframeAnalysisResponse {
+  frames: FrameInfo[];
+  keyframe_count: number;
+  keyframe_threshold: number;
+  keyframe_method: "adjacent" | "flow";
 }
 
 /**
@@ -153,6 +166,22 @@ export async function getJobFrames(jobId: string): Promise<ListFramesResponse> {
   const res = await fetch(`${getBaseUrl()}/api/jobs/${jobId}/frames`);
   if (!res.ok) {
     throw new Error(`Failed to list frames for ${jobId}`);
+  }
+  return res.json();
+}
+
+export async function analyzeJobKeyframes(
+  jobId: string,
+  request: { threshold: number; method: "adjacent" | "flow" }
+): Promise<KeyframeAnalysisResponse> {
+  const res = await fetch(`${getBaseUrl()}/api/jobs/${jobId}/keyframes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to analyze keyframes (${res.status})`);
   }
   return res.json();
 }

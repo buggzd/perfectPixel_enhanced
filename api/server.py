@@ -42,7 +42,7 @@ from perfect_pixel.exporting import (  # noqa: E402
     export_single_png,
     export_sprite_sheet_4x4,
 )
-from perfect_pixel.video import process_video  # noqa: E402
+from perfect_pixel.video import analyze_keyframes, process_video  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -75,6 +75,9 @@ class Job:
     current_frame: int = 0
     grid_size: Optional[dict] = None
     output_frames: list = field(default_factory=list)
+    frame_metadata: list = field(default_factory=list)
+    keyframe_threshold: float = 8.0
+    keyframe_method: str = "adjacent"
     error: Optional[str] = None
     cancel_flag: threading.Event = field(default_factory=threading.Event)
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -101,6 +104,9 @@ class Job:
                 "current_frame": self.current_frame,
                 "grid_size": self.grid_size,
                 "output_frame_count": output_count,
+                "keyframe_count": sum(1 for frame in self.frame_metadata if frame.get("is_keyframe")),
+                "keyframe_threshold": self.keyframe_threshold,
+                "keyframe_method": self.keyframe_method,
                 "latest_frame": latest_frame,
                 "error": self.error,
             }
@@ -217,6 +223,7 @@ def _run_job(
             job.grid_size = result["grid_size"]
             job.total_frames = result["total_frames"]
             job.output_frames = result["output_frames"]
+            job.frame_metadata = []
             job.current_frame = result["total_frames"]
             job.progress = 1.0
             job.status = "done"
@@ -366,6 +373,9 @@ def get_job(job_id: str, include_output_frames: bool = False):
 @app.get("/api/jobs/{job_id}/frames")
 def list_frames(job_id: str):
     job = _get_job(job_id)
+    with job._lock:
+        if job.frame_metadata:
+            return {"frames": list(job.frame_metadata)}
     frames = []
     for name in sorted(os.listdir(job.frames_dir)) if os.path.isdir(job.frames_dir) else []:
         if not name.lower().endswith(".png"):
@@ -378,6 +388,57 @@ def list_frames(job_id: str):
             idx = -1
         frames.append({"name": name, "index": idx})
     return {"frames": frames}
+
+
+class KeyframeAnalysisRequest(BaseModel):
+    threshold: float = 8.0
+    method: str = "adjacent"
+
+
+@app.post("/api/jobs/{job_id}/keyframes")
+def analyze_job_keyframes(job_id: str, req: KeyframeAnalysisRequest):
+    job = _get_job(job_id)
+    if req.threshold < 0:
+        raise HTTPException(status_code=400, detail="threshold must be >= 0")
+    if req.method not in {"adjacent", "flow"}:
+        raise HTTPException(status_code=400, detail="method must be adjacent or flow")
+
+    with job._lock:
+        if job.status != "done":
+            raise HTTPException(
+                status_code=409,
+                detail=f"job must be done before keyframe analysis (status={job.status})",
+            )
+        frames_dir = job.frames_dir
+        output_frames = list(job.output_frames)
+
+    if not output_frames:
+        raise HTTPException(status_code=409, detail="job has no processed frames")
+
+    try:
+        metadata = analyze_keyframes(
+            frames_dir,
+            output_frames,
+            keyframe_threshold=req.threshold,
+            keyframe_method=req.method,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    keyframe_count = sum(1 for frame in metadata if frame.get("is_keyframe"))
+    with job._lock:
+        job.frame_metadata = metadata
+        job.keyframe_threshold = req.threshold
+        job.keyframe_method = req.method
+
+    return {
+        "frames": metadata,
+        "keyframe_count": keyframe_count,
+        "keyframe_threshold": req.threshold,
+        "keyframe_method": req.method,
+    }
 
 
 @app.get("/api/jobs/{job_id}/frames/{name}")
@@ -636,6 +697,9 @@ def get_job_metadata(job_id: str):
             "source_frame_count": job.source_frame_count,
             "processed_fps": job.processed_fps,
             "processed_frame_count": len(job.output_frames),
+            "keyframe_count": sum(1 for frame in job.frame_metadata if frame.get("is_keyframe")),
+            "keyframe_threshold": job.keyframe_threshold,
+            "keyframe_method": job.keyframe_method,
             "frame_width": job.frame_width,
             "frame_height": job.frame_height,
             "grid_size": {"w": grid["w"], "h": grid["h"]} if grid else None,

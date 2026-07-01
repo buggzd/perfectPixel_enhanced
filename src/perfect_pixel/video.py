@@ -61,7 +61,13 @@ except ImportError:  # pragma: no cover
         sample_median,
     )
 
-__all__ = ["process_frame", "process_video", "TemporalSmoother", "VideoGridTracker"]
+__all__ = [
+    "analyze_keyframes",
+    "process_frame",
+    "process_video",
+    "TemporalSmoother",
+    "VideoGridTracker",
+]
 
 
 ProgressCallback = Callable[[int, int], None]
@@ -323,6 +329,89 @@ def _denoise(rgb: np.ndarray, strength: float) -> np.ndarray:
     sigma = max(1.0, float(strength) * 6.0)
     bgr = cv2.bilateralFilter(bgr, 5, sigma, sigma)
     return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+
+
+def _keyframe_signature(rgb: np.ndarray, sample_size: int = 16) -> np.ndarray:
+    small = cv2.resize(rgb, (sample_size, sample_size), interpolation=cv2.INTER_AREA)
+    return small.astype(np.float32)
+
+
+def _keyframe_change_score(prev_signature: np.ndarray, signature: np.ndarray) -> float:
+    return float(np.mean(np.abs(prev_signature - signature)))
+
+
+def _keyframe_optical_flow_score(prev_signature: np.ndarray, signature: np.ndarray) -> float:
+    prev_gray = cv2.cvtColor(prev_signature.astype(np.uint8), cv2.COLOR_RGB2GRAY)
+    gray = cv2.cvtColor(signature.astype(np.uint8), cv2.COLOR_RGB2GRAY)
+    flow = cv2.calcOpticalFlowFarneback(
+        prev_gray,
+        gray,
+        None,
+        pyr_scale=0.5,
+        levels=1,
+        winsize=5,
+        iterations=2,
+        poly_n=5,
+        poly_sigma=1.1,
+        flags=0,
+    )
+    magnitude = np.sqrt(flow[..., 0] ** 2 + flow[..., 1] ** 2)
+    appearance_delta = np.mean(np.abs(signature - prev_signature)) / 255.0
+    return float(np.mean(magnitude) * 24.0 + appearance_delta * 40.0)
+
+
+def _read_keyframe_rgb(frames_dir: str, name: str) -> np.ndarray:
+    path = os.path.join(frames_dir, name)
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise FileNotFoundError(f"Cannot open frame: {path}")
+    if img.ndim == 2:
+        return cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    if img.shape[2] == 4:
+        return cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
+def analyze_keyframes(
+    frames_dir: str,
+    output_frames: Sequence[str],
+    *,
+    keyframe_threshold: float = 8.0,
+    keyframe_method: str = "adjacent",
+) -> list[dict]:
+    """Tag an existing frame sequence with keyframe metadata."""
+    if keyframe_threshold < 0:
+        raise ValueError("keyframe_threshold must be >= 0")
+    if keyframe_method not in {"adjacent", "flow"}:
+        raise ValueError("keyframe_method must be 'adjacent' or 'flow'")
+
+    frame_metadata: list[dict] = []
+    prev_signature: Optional[np.ndarray] = None
+    for index, name in enumerate(output_frames):
+        signature = _keyframe_signature(_read_keyframe_rgb(frames_dir, name))
+        if prev_signature is None:
+            change_score = 0.0
+            is_keyframe = True
+        elif keyframe_method == "flow":
+            change_score = _keyframe_optical_flow_score(prev_signature, signature)
+            is_keyframe = change_score >= keyframe_threshold
+        else:
+            change_score = _keyframe_change_score(prev_signature, signature)
+            is_keyframe = change_score >= keyframe_threshold
+        prev_signature = signature
+        frame_metadata.append(
+            {
+                "name": name,
+                "index": index,
+                "is_keyframe": bool(is_keyframe),
+                "change_score": round(change_score, 4),
+                "keyframe_method": keyframe_method,
+            }
+        )
+
+    if frame_metadata:
+        frame_metadata[-1]["is_keyframe"] = True
+    return frame_metadata
 
 
 # ---------------------------------------------------------------------------
