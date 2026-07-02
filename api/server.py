@@ -183,6 +183,7 @@ def _run_job(
     vote_frames: int,
     denoise: bool,
     denoise_strength: float,
+    max_workers: int,
 ) -> None:
     def on_progress(current: int, total: int) -> None:
         if job.cancel_flag.is_set():
@@ -218,6 +219,7 @@ def _run_job(
             vote_frames=vote_frames,
             denoise=denoise,
             denoise_strength=denoise_strength,
+            max_workers=max_workers,
         )
 
         with job._lock:
@@ -283,6 +285,7 @@ def create_job(
     vote_frames: int = Form(5),
     denoise: bool = Form(False),
     denoise_strength: float = Form(5.0),
+    max_workers: int = Form(0),
 ):
     if sample_method not in VALID_SAMPLE_METHODS:
         raise HTTPException(
@@ -303,6 +306,8 @@ def create_job(
         raise HTTPException(status_code=400, detail="vote_frames must be >= 0")
     if denoise_strength < 0:
         raise HTTPException(status_code=400, detail="denoise_strength must be >= 0")
+    if max_workers < 0:
+        raise HTTPException(status_code=400, detail="max_workers must be >= 0")
     grid_size = None
     if grid_size_w is not None and grid_size_h is not None:
         if grid_size_w <= 0 or grid_size_h <= 0:
@@ -358,6 +363,7 @@ def create_job(
             vote_frames=vote_frames,
             denoise=denoise,
             denoise_strength=denoise_strength,
+            max_workers=max_workers,
         ),
         daemon=True,
     )
@@ -451,7 +457,14 @@ def get_frame(job_id: str, name: str):
     path = os.path.join(job.frames_dir, name)
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="frame not found")
-    return FileResponse(path, media_type="image/png")
+    return FileResponse(
+        path,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 @app.get("/api/jobs/{job_id}/background-preview/{name}")

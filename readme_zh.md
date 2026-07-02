@@ -1,11 +1,23 @@
 # Perfect Pixel Enhanced (像素级完美帧增强版)
 
-> **自动检测、精细化并获取单帧图像及视频序列的完美像素艺术。**
+> **视频转完美序列帧、自动检测、精细化并获取单帧图像及视频序列的完美像素艺术。**
 
 [English](readme.md) | [简体中文](readme_zh.md)
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#)
+
+## 🎬 效果展示
+
+### 🖥️ 桌面端应用效果展示
+| 1. 主界面与视频处理 | 2. 帧范围选择与交互 | 3. 去除背景/抠图 |
+| :---: | :---: | :---: |
+| ![主界面](./assets/screenshot_output_showcase.png) | ![帧选择](./assets/screenshot_sequence_select_showcase.png) | ![去除背景](./assets/screenshot_background_remove_showcase.png) |
+
+### 🎞️ 像素化与精灵图导出动图演示
+| 像素化及导出效果 | 精灵表 (Sprite Sheet) 导出效果 |
+| :---: | :---: |
+| ![像素化及导出效果](./assets/pixel_export.gif) | ![精灵表 (Sprite Sheet) 导出效果](./assets/pixel_sheet.png) |
 
 ---
 
@@ -49,16 +61,6 @@
 - **自定义滚动轮播选择器 (Wheel Picker)**：用平滑且具实体手感的滚动滑轮取代了常规下拉菜单，用于调节播放 FPS 等参数。
 - **交互式帧范围选择**：支持在右侧侧边栏通过 `Shift + 点击` 批量选中多帧进行循环试播，或仅导出所选帧。
 - **带惯性的阻尼时间轴**：左侧设置面板与右侧帧列表均支持带惯性的平滑阻尼滚动和中心磁吸贴合效果。
-
----
-
-## 🎬 效果展示
-
-### 像素化及导出效果
-![Pixel Export Demo](./assets/pixel_export.gif)
-
-### 精灵表 (Sprite Sheet) 导出效果
-![Sprite Sheet Export Demo](./assets/pixel_sheet.png)
 
 ---
 

@@ -187,6 +187,25 @@ def sample_center(image, x_coords, y_coords):
     return image[centers_y[:, None], centers_x[None, :]]
 
 
+def _cell_bounds(coords, limit):
+    bounds = np.asarray(coords, dtype=np.int32)
+    starts = np.clip(bounds[:-1], 0, limit)
+    ends = np.clip(bounds[1:], 0, limit)
+    ends = np.maximum(ends, np.minimum(starts + 1, limit))
+    return starts.astype(np.int32), ends.astype(np.int32)
+
+
+def _integral_channels(img):
+    img64 = img.astype(np.float64, copy=False)
+    sums = np.pad(img64.cumsum(axis=0).cumsum(axis=1), ((1, 0), (1, 0), (0, 0)))
+    sq_sums = np.pad((img64 * img64).cumsum(axis=0).cumsum(axis=1), ((1, 0), (1, 0), (0, 0)))
+    return sums, sq_sums
+
+
+def _rect_sum(integral, x0, x1, y0, y1):
+    return integral[y1, x1] - integral[y0, x1] - integral[y1, x0] + integral[y0, x0]
+
+
 def sample_majority(image, x_coords, y_coords, max_samples=128, iters=6, seed=0):
     rng = np.random.default_rng(seed)
 
@@ -196,21 +215,24 @@ def sample_majority(image, x_coords, y_coords, max_samples=128, iters=6, seed=0)
         img = img[..., None]
     C = img.shape[2]
 
-    x = np.asarray(x_coords, dtype=np.int32)
-    y = np.asarray(y_coords, dtype=np.int32)
-
-    nx, ny = len(x) - 1, len(y) - 1
+    x0s, x1s = _cell_bounds(x_coords, W)
+    y0s, y1s = _cell_bounds(y_coords, H)
+    nx, ny = len(x0s), len(y0s)
     out = np.empty((ny, nx, C), dtype=np.float32)
+    integral, sq_integral = _integral_channels(img)
 
     for j in range(ny):
-        y0, y1 = int(y[j]), int(y[j + 1])
-        y0 = np.clip(y0, 0, H); y1 = np.clip(y1, 0, H)
-        if y1 <= y0: y1 = min(y0 + 1, H)
+        y0, y1 = int(y0s[j]), int(y1s[j])
 
         for i in range(nx):
-            x0, x1 = int(x[i]), int(x[i + 1])
-            x0 = np.clip(x0, 0, W); x1 = np.clip(x1, 0, W)
-            if x1 <= x0: x1 = min(x0 + 1, W)
+            x0, x1 = int(x0s[i]), int(x1s[i])
+            area = max(1, (y1 - y0) * (x1 - x0))
+            mean = _rect_sum(integral, x0, x1, y0, y1) / area
+            mean_sq = _rect_sum(sq_integral, x0, x1, y0, y1) / area
+            std = np.sqrt(np.maximum(mean_sq - mean * mean, 0.0))
+            if float(std.max()) < 5.0:
+                out[j, i] = mean
+                continue
 
             cell = img[y0:y1, x0:x1].reshape(-1, C)
             n = cell.shape[0]
@@ -221,10 +243,6 @@ def sample_majority(image, x_coords, y_coords, max_samples=128, iters=6, seed=0)
                 cell = cell[rng.integers(0, n, size=max_samples)]
 
             c0 = cell[0]
-            # 纯色/近纯色区域直接取均值，跳过迭代——减少边缘噪声跳动。
-            if float(cell.std(axis=0).max()) < 5.0:
-                out[j, i] = cell.mean(axis=0)
-                continue
             c1 = cell[np.argmax(((cell - c0) ** 2).sum(1))]
 
             for _ in range(iters):
@@ -247,27 +265,17 @@ def sample_median(image, x_coords, y_coords):
         img = img[..., None]
     C = img.shape[2]
 
-    x = np.asarray(x_coords, dtype=np.int32)
-    y = np.asarray(y_coords, dtype=np.int32)
-
-    nx, ny = len(x) - 1, len(y) - 1
+    x0s, x1s = _cell_bounds(x_coords, W)
+    y0s, y1s = _cell_bounds(y_coords, H)
+    nx, ny = len(x0s), len(y0s)
     out = np.empty((ny, nx, C), dtype=np.float32)
     
     for j in range(ny):
-        y0, y1 = int(y[j]), int(y[j + 1])
-        y0 = np.clip(y0, 0, H); y1 = np.clip(y1, 0, H)
-        if y1 <= y0: y1 = min(y0 + 1, H)
+        y0, y1 = int(y0s[j]), int(y1s[j])
 
         for i in range(nx):
-            x0, x1 = int(x[i]), int(x[i + 1])
-            x0 = np.clip(x0, 0, W); x1 = np.clip(x1, 0, W)
-            if x1 <= x0: x1 = min(x0 + 1, W)
-
-            cell = img[y0:y1, x0:x1].reshape(-1, C)
-            if cell.shape[0] == 0:
-                out[j, i] = 0
-            else:
-                out[j, i] = np.median(cell, axis=0)
+            x0, x1 = int(x0s[i]), int(x1s[i])
+            out[j, i] = np.median(img[y0:y1, x0:x1].reshape(-1, C), axis=0)
 
     if image.dtype == np.uint8:
         return np.clip(np.rint(out), 0, 255).astype(np.uint8)

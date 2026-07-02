@@ -121,6 +121,26 @@ def sample_center(image, x_coords, y_coords):
     scaled_image = image[centers_y[:, None], centers_x[None, :]]
     return scaled_image
 
+
+def _cell_bounds(coords, limit):
+    bounds = np.asarray(coords, dtype=np.int32)
+    starts = np.clip(bounds[:-1], 0, limit)
+    ends = np.clip(bounds[1:], 0, limit)
+    ends = np.maximum(ends, np.minimum(starts + 1, limit))
+    return starts.astype(np.int32), ends.astype(np.int32)
+
+
+def _integral_channels(img):
+    img64 = img.astype(np.float64, copy=False)
+    sums = np.pad(img64.cumsum(axis=0).cumsum(axis=1), ((1, 0), (1, 0), (0, 0)))
+    sq_sums = np.pad((img64 * img64).cumsum(axis=0).cumsum(axis=1), ((1, 0), (1, 0), (0, 0)))
+    return sums, sq_sums
+
+
+def _rect_sum(integral, x0, x1, y0, y1):
+    return integral[y1, x1] - integral[y0, x1] - integral[y1, x0] + integral[y0, x0]
+
+
 def sample_majority(image, x_coords, y_coords, max_samples=128, iters=6, seed=42):
     rng = np.random.default_rng(seed)
 
@@ -130,23 +150,26 @@ def sample_majority(image, x_coords, y_coords, max_samples=128, iters=6, seed=42
         img = img[..., None]
     C = img.shape[2]
 
-    x = np.asarray(x_coords, dtype=np.int32)
-    y = np.asarray(y_coords, dtype=np.int32)
-
-    nx, ny = len(x) - 1, len(y) - 1
+    x0s, x1s = _cell_bounds(x_coords, W)
+    y0s, y1s = _cell_bounds(y_coords, H)
+    nx, ny = len(x0s), len(y0s)
     out = np.empty((ny, nx, C), dtype=np.float32)
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, iters, 1.0)
+    integral, sq_integral = _integral_channels(img)
     cv2.setRNGSeed(seed)
     
     for j in range(ny):
-        y0, y1 = int(y[j]), int(y[j + 1])
-        y0 = np.clip(y0, 0, H); y1 = np.clip(y1, 0, H)
-        if y1 <= y0: y1 = min(y0 + 1, H)
+        y0, y1 = int(y0s[j]), int(y1s[j])
 
         for i in range(nx):
-            x0, x1 = int(x[i]), int(x[i + 1])
-            x0 = np.clip(x0, 0, W); x1 = np.clip(x1, 0, W)
-            if x1 <= x0: x1 = min(x0 + 1, W)
+            x0, x1 = int(x0s[i]), int(x1s[i])
+            area = max(1, (y1 - y0) * (x1 - x0))
+            mean = _rect_sum(integral, x0, x1, y0, y1) / area
+            mean_sq = _rect_sum(sq_integral, x0, x1, y0, y1) / area
+            std = np.sqrt(np.maximum(mean_sq - mean * mean, 0.0))
+            if float(std.max()) < 5.0:
+                out[j, i] = mean
+                continue
 
             cell = img[y0:y1, x0:x1].reshape(-1, C)
             n = cell.shape[0]
@@ -159,25 +182,12 @@ def sample_majority(image, x_coords, y_coords, max_samples=128, iters=6, seed=42
             if cell.shape[0] < 2:
                 out[j, i] = cell[0]
             else:
-                # 纯色/近纯色区域直接取均值，跳过 KMeans——
-                # 纯色区聚成 2 类本身不稳定，聚类中心会随噪声跳动。
-                if float(cell.std(axis=0).max()) < 5.0:
-                    out[j, i] = cell.mean(axis=0)
-                else:
-                    # KMEANS_PP_CENTERS + attempts=3 替代 RANDOM_CENTERS + attempts=1，
-                    # 并用固定 cv2 RNG seed——
-                    # 否则 kmeans 的初始化随机性会在帧间产生聚类跳跃（闪烁）。
-                    _, labels, centers = cv2.kmeans(
-                        cell, 2, None, criteria, 3, cv2.KMEANS_PP_CENTERS
-                    )
-
-                    # 计算两个簇的像素数量，labels 是二维数组 (N, 1)
-                    count1 = np.sum(labels)  # 标签是 0 和 1
-                    count0 = len(labels) - count1
-
-                    # 多数表决：取成员较多的中心点
-                    out[j, i] = centers[1] if count1 >= count0 else centers[0]
-            # --- 替换部分结束 ---
+                _, labels, centers = cv2.kmeans(
+                    cell, 2, None, criteria, 3, cv2.KMEANS_PP_CENTERS
+                )
+                count1 = np.sum(labels)
+                count0 = len(labels) - count1
+                out[j, i] = centers[1] if count1 >= count0 else centers[0]
 
     if image.dtype == np.uint8:
         return np.clip(np.rint(out), 0, 255).astype(np.uint8)
@@ -190,27 +200,17 @@ def sample_median(image, x_coords, y_coords):
         img = img[..., None]
     C = img.shape[2]
 
-    x = np.asarray(x_coords, dtype=np.int32)
-    y = np.asarray(y_coords, dtype=np.int32)
-
-    nx, ny = len(x) - 1, len(y) - 1
+    x0s, x1s = _cell_bounds(x_coords, W)
+    y0s, y1s = _cell_bounds(y_coords, H)
+    nx, ny = len(x0s), len(y0s)
     out = np.empty((ny, nx, C), dtype=np.float32)
     
     for j in range(ny):
-        y0, y1 = int(y[j]), int(y[j + 1])
-        y0 = np.clip(y0, 0, H); y1 = np.clip(y1, 0, H)
-        if y1 <= y0: y1 = min(y0 + 1, H)
+        y0, y1 = int(y0s[j]), int(y1s[j])
 
         for i in range(nx):
-            x0, x1 = int(x[i]), int(x[i + 1])
-            x0 = np.clip(x0, 0, W); x1 = np.clip(x1, 0, W)
-            if x1 <= x0: x1 = min(x0 + 1, W)
-
-            cell = img[y0:y1, x0:x1].reshape(-1, C)
-            if cell.shape[0] == 0:
-                out[j, i] = 0
-            else:
-                out[j, i] = np.median(cell, axis=0)
+            x0, x1 = int(x0s[i]), int(x1s[i])
+            out[j, i] = np.median(img[y0:y1, x0:x1].reshape(-1, C), axis=0)
 
     if image.dtype == np.uint8:
         return np.clip(np.rint(out), 0, 255).astype(np.uint8)

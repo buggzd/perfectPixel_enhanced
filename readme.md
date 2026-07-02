@@ -9,6 +9,20 @@
 
 ---
 
+## 🎬 Showcase
+
+### 🖥️ Desktop Application Showcases
+| 1. Main Interface & Video Processing | 2. Frame Range Selection | 3. Background Removal |
+| :---: | :---: | :---: |
+| ![Main Interface](./assets/screenshot_output_showcase.png) | ![Frame Selection](./assets/screenshot_sequence_select_showcase.png) | ![Background Removal](./assets/screenshot_background_remove_showcase.png) |
+
+### 🎞️ Pixel & Sprite Sheet Export Demos
+| Pixel Export Demo | Sprite Sheet Export Demo |
+| :---: | :---: |
+| ![Pixel Export Demo](./assets/pixel_export.gif) | ![Sprite Sheet Export Demo](./assets/pixel_sheet.png) |
+
+---
+
 ## 📌 Project Origin & Fork Information
 This project is an enhanced **fork** of the original [theamusing/perfectPixel](https://github.com/theamusing/perfectPixel) repository. 
 
@@ -27,14 +41,14 @@ While the original tool was designed for refining single static pixel-style imag
 
 ### 2. Advanced Post-Processing
 - **Alpha-Preserving Background Removal**: Isolate characters and sprites from backgrounds using customizable parameters:
-  - `background_color`: Color to target (auto-detected or manually specified).
-  - `threshold`: Sensitivity of background matching.
-  - `feather`: Edge smoothing radius `[0, 8]` to blend pixel edges.
-  - `block_size`: Connectivity radius for background seeds.
-  - `edge_connected`: Restricts removal to edges to preserve internal pixels of matching colors.
+- `background_color`: Color to target (auto-detected or manually specified).
+- `threshold`: Sensitivity of background matching.
+- `feather`: Edge smoothing radius `[0, 8]` to blend pixel edges.
+- `block_size`: Connectivity radius for background seeds.
+- `edge_connected`: Restricts removal to edges to preserve internal pixels of matching colors.
 - **Keyframe Analysis**: Automatically identify key animation frames using:
-  - **Adjacent Difference**: Compares consecutive frames to detect pixel changes.
-  - **Optical Flow**: Analyzes motion vectors between frames to identify key action states.
+- **Adjacent Difference**: Compares consecutive frames to detect pixel changes.
+- **Optical Flow**: Analyzes motion vectors between frames to identify key action states.
 
 ### 3. Custom Batch Exporting
 Export processed sequences with full customizability:
@@ -49,16 +63,6 @@ Export processed sequences with full customizability:
 - **Custom Scrollable Wheel Picker**: Replaced standard dropdowns with a smooth, tactile scroll-wheel picker for setting playback FPS and other values.
 - **Interactive Range Selection**: Shift-click to select multiple frames in the sidebar, set loop playback over the selection, or export a customized subset of frames.
 - **Inertial Timeline Scrolling**: Left settings panel and right-hand frame list feature custom momentum-based scroll physics with kinetic snapping.
-
----
-
-## 🎬 Showcase
-
-### Pixel Export Demo
-![Pixel Export Demo](./assets/pixel_export.gif)
-
-### Sprite Sheet Export Demo
-![Sprite Sheet Export Demo](./assets/pixel_sheet.png)
 
 ---
 

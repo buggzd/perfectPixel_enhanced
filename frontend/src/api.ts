@@ -34,6 +34,7 @@ export interface JobOptions {
   vote_frames?: number;
   denoise?: boolean;
   denoise_strength?: number;
+  max_workers?: number;
 }
 
 export interface JobStatusResponse {
@@ -135,6 +136,9 @@ export async function createJob(
   if (options.denoise_strength !== undefined) {
     formData.append("denoise_strength", options.denoise_strength.toString());
   }
+  if (options.max_workers !== undefined) {
+    formData.append("max_workers", options.max_workers.toString());
+  }
   const res = await fetch(`${getBaseUrl()}/api/jobs`, {
     method: "POST",
     body: formData,
@@ -189,8 +193,9 @@ export async function analyzeJobKeyframes(
 /**
  * Gets the direct URL of a single frame image for rendering in <img>
  */
-export function getFrameUrl(jobId: string, frameName: string): string {
-  return `${getBaseUrl()}/api/jobs/${jobId}/frames/${frameName}`;
+export function getFrameUrl(jobId: string, frameName: string, cacheKey?: string | number): string {
+  const url = `${getBaseUrl()}/api/jobs/${jobId}/frames/${frameName}`;
+  return cacheKey === undefined ? url : `${url}?v=${encodeURIComponent(String(cacheKey))}`;
 }
 
 export function getBackgroundPreviewUrl(

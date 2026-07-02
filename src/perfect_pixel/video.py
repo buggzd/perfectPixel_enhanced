@@ -34,6 +34,7 @@ converted to RGB before processing, and converted back to BGR before writing.
 from __future__ import annotations
 
 import os
+from concurrent.futures import Future, ProcessPoolExecutor
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import cv2
@@ -114,6 +115,21 @@ def _sample_fixed_grid(
     out_rgb = _fix_square(out_rgb, fix_square)
     refined_h, refined_w = out_rgb.shape[:2]
     return refined_w, refined_h, out_rgb
+
+
+def _sample_fixed_grid_worker(
+    rgb: np.ndarray,
+    grid_coords: GridCoords,
+    sample_method: str,
+    fix_square: bool,
+) -> Tuple[int, int, np.ndarray]:
+    """Process-pool entry point for frame-local fixed-grid sampling."""
+    return _sample_fixed_grid(
+        rgb,
+        grid_coords,
+        sample_method=sample_method,
+        fix_square=fix_square,
+    )
 
 
 def process_frame(
@@ -439,6 +455,7 @@ def process_video(
     vote_frames: int = 5,
     denoise: bool = False,
     denoise_strength: float = 5.0,
+    max_workers: int = 1,
 ) -> dict:
     """Process a video into a sequence of pixel-perfect PNG frames.
 
@@ -470,6 +487,10 @@ def process_video(
         denoise: If True, apply edge-preserving denoising before analysis
             (方案 4). Off by default to avoid blurring clean sources.
         denoise_strength: Bilateral filter strength (方案 4).
+        max_workers: Number of worker processes used for frame-local sampling.
+            ``1`` keeps the historical serial path; ``0`` selects a conservative
+            auto value from CPU count. Temporal grid/output smoothing still run
+            in frame order, so output stability is preserved.
 
     Returns:
         ``{grid_size:{w,h}|None, total_frames, output_frames:[...], output_dir}``
@@ -478,6 +499,8 @@ def process_video(
         raise ValueError("every_n_frames must be >= 1")
     if output_scale < 1:
         raise ValueError("output_scale must be >= 1")
+    if max_workers < 0:
+        raise ValueError("max_workers must be >= 0")
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -496,11 +519,49 @@ def process_video(
     locked_coords: Optional[GridCoords] = None  # legacy (adaptive_grid=False)
     tracker: Optional[VideoGridTracker] = None   # adaptive_grid=True
     smoother = TemporalSmoother(temporal_alpha, scene_change_threshold) if temporal_smoothing else None
+    worker_count = min(os.cpu_count() or 1, 8) if max_workers == 0 else int(max_workers)
+    worker_count = max(1, worker_count)
+    sample_pool: Optional[ProcessPoolExecutor] = None
+    pending: List[Tuple[int, Future]] = []
+    prefetch_size = max(1, worker_count * 2)
 
     written: list[str] = []
     out_index = 0
 
+    def _finish_frame(frame_index: int, out_rgb: np.ndarray) -> None:
+        nonlocal out_index
+        if smoother is not None:
+            out_rgb = smoother.smooth(out_rgb)
+
+        # get_perfect_pixel falls back to returning the original image
+        # (w/h None) on failure — still write it so the sequence stays
+        # continuous.
+        out_bgr = cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
+        if output_scale > 1:
+            hh, ww = out_bgr.shape[:2]
+            out_bgr = cv2.resize(
+                out_bgr, (ww * output_scale, hh * output_scale),
+                interpolation=cv2.INTER_NEAREST,
+            )
+
+        name = f"frame_{frame_index:06d}.png"
+        cv2.imwrite(os.path.join(output_dir, name), out_bgr)
+        written.append(name)
+        out_index += 1
+
+        if progress_callback is not None:
+            progress_callback(out_index, total_out)
+
+    def _drain_pending(force: bool = False) -> None:
+        while pending and (force or len(pending) >= prefetch_size):
+            frame_index, future = pending.pop(0)
+            _, _, sampled_rgb = future.result()
+            _finish_frame(frame_index, sampled_rgb)
+
     try:
+        if worker_count > 1:
+            sample_pool = ProcessPoolExecutor(max_workers=worker_count)
+
         # ---- Phase 1: multi-frame voting (方案 1) --------------------------
         buffered: List[np.ndarray] = []
         frame_pos = 0
@@ -559,7 +620,22 @@ def process_video(
                     coords,
                     sample_method=sample_method,
                     fix_square=fix_square,
-                )
+                ) if sample_pool is None else (None, None, None)
+                if sample_pool is not None:
+                    pending.append(
+                        (
+                            out_index + len(pending),
+                            sample_pool.submit(
+                                _sample_fixed_grid_worker,
+                                rgb,
+                                coords,
+                                sample_method,
+                                fix_square,
+                            ),
+                        )
+                    )
+                    _drain_pending()
+                    continue
             else:
                 # Detection failed entirely: fall back to per-frame auto-detect
                 # (less stable, but keeps the sequence continuous).
@@ -573,29 +649,13 @@ def process_video(
                     peak_width=peak_width,
                 )
 
-            if smoother is not None:
-                out_rgb = smoother.smooth(out_rgb)
+            _finish_frame(out_index, out_rgb)
 
-            # get_perfect_pixel falls back to returning the original image
-            # (w/h None) on failure — still write it so the sequence stays
-            # continuous.
-            out_bgr = cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
-            if output_scale > 1:
-                hh, ww = out_bgr.shape[:2]
-                out_bgr = cv2.resize(
-                    out_bgr, (ww * output_scale, hh * output_scale),
-                    interpolation=cv2.INTER_NEAREST,
-                )
-
-            name = f"frame_{out_index:06d}.png"
-            cv2.imwrite(os.path.join(output_dir, name), out_bgr)
-            written.append(name)
-            out_index += 1
-
-            if progress_callback is not None:
-                progress_callback(out_index, total_out)
+        _drain_pending(force=True)
     finally:
         cap.release()
+        if sample_pool is not None:
+            sample_pool.shutdown(wait=True, cancel_futures=False)
 
     grid_result = {"w": locked_grid[0], "h": locked_grid[1]} if locked_grid else None
     return {

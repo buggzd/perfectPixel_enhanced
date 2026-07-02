@@ -35,6 +35,9 @@ export const translations = {
     voteFrames: "Voting Frames",
     denoise: "Denoise Preprocessing",
     denoiseStrength: "Denoise Strength",
+    maxWorkers: "Parallel Workers",
+    maxWorkersAuto: "Auto",
+    maxWorkersSerial: "1 (Serial)",
     backgroundThreshold: "Background Threshold",
     backgroundFeather: "Background Feather",
     backgroundPanelTitle: "Background Removal",
@@ -126,6 +129,10 @@ export const translations = {
       denoiseStrength: {
         main: "Sets how much compression noise cleanup is applied. Raise it for blocky video; lower it to preserve fine edges.",
         tech: "Bilateral filter strength.",
+      },
+      maxWorkers: {
+        main: "Uses multiple CPU cores for the slow per-frame color sampling step. Auto is recommended; choose 1 only when debugging exact serial behavior.",
+        tech: "0 selects up to 8 worker processes; temporal smoothing and grid tracking still run in frame order.",
       },
       backgroundColor: {
         main: "The color treated as background. Use auto-detect for simple backgrounds, or pick from the original frame when you need precision.",
@@ -330,6 +337,9 @@ export const translations = {
     voteFrames: "首帧网格投票数",
     denoise: "去噪预处理",
     denoiseStrength: "去噪强度",
+    maxWorkers: "并行进程数",
+    maxWorkersAuto: "自动",
+    maxWorkersSerial: "1（串行）",
     backgroundThreshold: "背景阈值",
     backgroundFeather: "背景柔边",
     backgroundPanelTitle: "背景去除",
@@ -421,6 +431,10 @@ export const translations = {
       denoiseStrength: {
         main: "控制压缩噪点清理力度。视频块状噪点明显时调高；想保留锐利边缘时调低。",
         tech: "双边滤波强度。",
+      },
+      maxWorkers: {
+        main: "使用多个 CPU 核心加速最慢的逐帧颜色采样步骤。推荐使用自动；只有调试串行结果时才选 1。",
+        tech: "0 表示自动选择最多 8 个工作进程；时序平滑和网格跟踪仍按帧顺序执行。",
       },
       backgroundColor: {
         main: "被当作背景的颜色。纯色背景可用自动取色；需要更准时可从原图上吸取。",

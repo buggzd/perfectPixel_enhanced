@@ -318,6 +318,7 @@ function App() {
   const [voteFrames, setVoteFrames] = useState<number>(1);
   const [denoise, setDenoise] = useState<boolean>(false);
   const [denoiseStrength, setDenoiseStrength] = useState<number>(5.0);
+  const [maxWorkers, setMaxWorkers] = useState<number>(0);
 
   // Drag and drop states
   const [file, setFile] = useState<File | null>(null);
@@ -332,6 +333,7 @@ function App() {
   // Playback / Frame list states
   const [frames, setFrames] = useState<FrameInfo[]>([]);
   const [currentFrameIndex, setCurrentFrameIndex] = useState<number>(0);
+  const [frameCacheKey, setFrameCacheKey] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [playbackFps, setPlaybackFps] = useState<number>(15);
   const [loopPlayback] = useState<boolean>(true);
@@ -540,6 +542,7 @@ function App() {
             setCurrentFrameIndex(0);
             if (isApplyingBackground || status.stage === "background_removal") {
               setIsApplyingBackground(false);
+              setFrameCacheKey((key) => key + 1);
               setReviewStep("frames");
             } else if (pollIntervalRef.current) {
               clearInterval(pollIntervalRef.current);
@@ -857,6 +860,7 @@ function App() {
     setIsSubmitting(true);
     setErrorMsg(null);
     setFrames([]);
+    setFrameCacheKey((key) => key + 1);
     setSelectedFrames([]);
     setLastSelectedIndex(null);
     setCurrentFrameIndex(0);
@@ -881,6 +885,7 @@ function App() {
       vote_frames: voteFrames,
       denoise: denoise,
       denoise_strength: denoiseStrength,
+      max_workers: maxWorkers,
     };
 
     try {
@@ -905,6 +910,7 @@ function App() {
       setCurrentJobId(null);
       setJobStatus(null);
       setFrames([]);
+      setFrameCacheKey((key) => key + 1);
       setSelectedFrames([]);
       setLastSelectedIndex(null);
       setCurrentFrameIndex(0);
@@ -1323,6 +1329,24 @@ function App() {
             />
           </div>
 
+          <div className="form-group">
+            <TooltipLabel help={t.paramHelp.maxWorkers} value={<span className="label-hint">max_workers</span>}>
+              {t.maxWorkers}
+            </TooltipLabel>
+            <CustomSelect
+              value={maxWorkers}
+              onChange={(val) => setMaxWorkers(val)}
+              options={[
+                { value: 0, label: t.maxWorkersAuto },
+                { value: 1, label: t.maxWorkersSerial },
+                { value: 2, label: "2" },
+                { value: 4, label: "4" },
+                { value: 8, label: "8" },
+              ]}
+              disabled={isProcessing}
+            />
+          </div>
+
           <div className="settings-section-title">{t.featureSwitches}</div>
 
           <div className="form-group toggle-group">
@@ -1653,7 +1677,7 @@ function App() {
                 <div style={{ marginTop: "10px", textAlign: "center" }}>
                   <div className="player-viewport" style={{ maxHeight: "200px" }}>
                     <img 
-                      src={getFrameUrl(currentJobId, frames[frames.length - 1].name)} 
+                      src={getFrameUrl(currentJobId, frames[frames.length - 1].name, frameCacheKey)} 
                       alt="Current Process Frame" 
                       className="player-frame-img"
                     />
@@ -1698,7 +1722,7 @@ function App() {
                       <img
                         ref={backgroundSourceImgRef}
                         crossOrigin="anonymous"
-                        src={getFrameUrl(currentJobId, frames[currentFrameIndex].name)}
+                        src={getFrameUrl(currentJobId, frames[currentFrameIndex].name, frameCacheKey)}
                         alt="Original processed frame"
                         className={`player-frame-img ${isPickingBackground ? "is-picking-color" : ""}`}
                         onClick={handlePickBackgroundColor}
@@ -1878,7 +1902,7 @@ function App() {
                     <>
                       <div className="player-viewport">
                         <img 
-                          src={getFrameUrl(currentJobId, frames[currentFrameIndex].name)} 
+                          src={getFrameUrl(currentJobId, frames[currentFrameIndex].name, frameCacheKey)} 
                           alt={`Processed Frame ${currentFrameIndex}`}
                           className="player-frame-img"
                         />
@@ -2083,7 +2107,7 @@ function App() {
                               setLastSelectedIndex(frame.index);
                             }}
                           >
-                            <img src={getFrameUrl(currentJobId, frame.name)} alt="" loading="lazy" />
+                            <img src={getFrameUrl(currentJobId, frame.name, frameCacheKey)} alt="" loading="lazy" />
                             {frame.is_keyframe && <span className="thumb-keyframe">{t.keyframeBadge}</span>}
                             <span className="thumb-idx">#{frame.index}</span>
                             <div 
