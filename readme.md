@@ -12,9 +12,9 @@
 ## 🎬 Showcase
 
 ### 🖥️ Desktop Application Showcases
-| 1. Main Interface & Video Processing | 2. Frame Range Selection | 3. Background Removal |
-| :---: | :---: | :---: |
-| ![Main Interface](./assets/screenshot_output_showcase.png) | ![Frame Selection](./assets/screenshot_sequence_select_showcase.png) | ![Background Removal](./assets/screenshot_background_remove_showcase.png) |
+| 1. Main Interface | 2. Frame Range Selection | 3. Background Removal | 4. Custom Batch Export |
+| :---: | :---: | :---: | :---: |
+| ![Main Interface](./assets/screenshot._main_menu.png) | ![Frame Selection](./assets/screenshot_sequence_select_showcase.png) | ![Background Removal](./assets/screenshot_background_remove_showcase.png) | ![Batch Export](./assets/screenshot_output_showcase.png) |
 
 ### 🎞️ Pixel & Sprite Sheet Export Demos
 | Pixel Export Demo | Sprite Sheet Export Demo |

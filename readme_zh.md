@@ -10,9 +10,9 @@
 ## 🎬 效果展示
 
 ### 🖥️ 桌面端应用效果展示
-| 1. 主界面与视频处理 | 2. 帧范围选择与交互 | 3. 去除背景/抠图 |
-| :---: | :---: | :---: |
-| ![主界面](./assets/screenshot_output_showcase.png) | ![帧选择](./assets/screenshot_sequence_select_showcase.png) | ![去除背景](./assets/screenshot_background_remove_showcase.png) |
+| 1. 主界面 | 2. 帧范围选择与交互 | 3. 去除背景/抠图 | 4. 批量导出设置 |
+| :---: | :---: | :---: | :---: |
+| ![主界面](./assets/screenshot._main_menu.png) | ![帧选择](./assets/screenshot_sequence_select_showcase.png) | ![去除背景](./assets/screenshot_background_remove_showcase.png) | ![批量导出](./assets/screenshot_output_showcase.png) |
 
 ### 🎞️ 像素化与精灵图导出动图演示
 | 像素化及导出效果 | 精灵表 (Sprite Sheet) 导出效果 |
