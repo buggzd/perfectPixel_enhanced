@@ -10,11 +10,13 @@
 ---
 
 ## 📌 项目起源与 Fork 说明
-本项目是原始 [theamusing/perfectPixel](https://github.com/theamusing/perfectPixel) 仓库的增强型 **Fork** 版本。原项目主要用于处理单张静态像素图的网格对齐，而本增强版本在此基础上，扩展了对**视频时序处理**和**时序稳定性调优**的支持，并提供了一个**独立运行的跨平台桌面端应用**。
+本项目是原始 [theamusing/perfectPixel](https://github.com/theamusing/perfectPixel) 仓库的增强型 **Fork** 版本。
+
+原项目主要用于处理单张静态像素图的网格对齐，而本增强版本在此基础上，扩展了对**视频时序处理**和**时序稳定性调优**的支持，引入了**高级后处理（去背景与关键帧分析）**、**深度自定义批量导出**，并提供了一个**独立运行、零依赖的跨平台桌面端应用**。
 
 ---
 
-## ✨ 核心新增特性 (本 Fork)
+## 🚀 核心新增特性 (本 Fork)
 
 ### 1. 视频序列与时序稳定性处理
 - **视频像素化转换**：支持提取并精细化 MP4/MOV/AVI 视频帧，最终输出完美对齐网格的像素 PNG 帧序列。
@@ -23,10 +25,40 @@
 - **自适应网格与时序平滑**：通过指数移动平均 (EMA) 在时序上平滑混合优化后的坐标，确保画面运动如丝般顺滑，无网格突变 popping。
 - **去噪预处理**：在进行网格估算前，过滤视频帧中的压缩伪影。
 
-### 2. 独立运行的桌面客户端 (Tauri + React + FastAPI)
-- **零依赖打包**：将 Python FastAPI 后端服务编译为 sidecar 可执行程序直接打包进客户端。最终用户无需安装 Python、Node 或 Rust 环境，双击即可运行。
-- **Spotify 风格的沉浸式暗黑 UI**：高阶质感的纯黑/炭灰界面，集成各类交互式微调开关、定制版胶囊下拉选择框与 Spotify 质感的轨道滑动条。
-- **垂直阻尼时间轴**：右侧内置垂直 snap-scrolling 滚轮式相册时间轴。支持鼠标滚轮拖拽并自动进行中心磁吸贴合（实时流畅更新预览帧），同时在视频播放时自动追踪并将当前帧滚入视口中心。
+### 2. 高级后处理功能
+- **保留透明度的背景去除**：利用可自定义的参数将角色/精灵从背景中剥离：
+  - `background_color`：目标背景颜色（支持自动检测或手动指定）。
+  - `threshold`：背景匹配的容差/敏感度。
+  - `feather`：边缘羽化半径 `[0, 8]`，平滑过渡像素边缘。
+  - `block_size`：去背景种子的连通半径。
+  - `edge_connected`：仅限制从图像边缘向内清除，以保留内部同色像素。
+- **关键帧分析**：自动识别动画序列中的关键过渡帧：
+  - **相邻差值法 (Adjacent Difference)**：比较相邻帧的像素差异来检测动作变化。
+  - **光流法 (Optical Flow)**：分析帧间运动矢量以捕获核心动作帧。
+
+### 3. 自定义批量导出
+支持多种格式的精细化批量导出：
+- **支持格式**：`png_sequence`（PNG 序列）、`gif`、`sprite_sheet`（雪碧图/精灵表）和 `single_png`（单帧）。
+- **自定义雪碧图网格**：自由设定行列数（`columns` x `rows`），并支持在空白格子中选择填充模式（`repeat_last` 循环最后一帧或留空）。
+- **帧率与循环控制**：为导出的 GIF/动画序列配置目标 FPS 及循环播放。
+- **自动重命名**：智能检测同名输出路径，防止因重复导出导致文件被意外覆盖。
+
+### 4. 独立运行的桌面客户端 (Tauri + React + FastAPI)
+- **零依赖打包**：将 Python FastAPI 后端服务编译为优化后的 `onedir` 格式 sidecar 直接打包进客户端。冷启动时间由原来的 **12.8秒大幅缩短至约0.3秒**！用户无需安装 Python、Node 或 Rust 运行环境，双击即可直接运行。
+- **Spotify 风格的沉浸式暗黑 UI**：高阶质感的纯黑/炭灰界面，集成各类交互式微调开关与美化面板。
+- **自定义滚动轮播选择器 (Wheel Picker)**：用平滑且具实体手感的滚动滑轮取代了常规下拉菜单，用于调节播放 FPS 等参数。
+- **交互式帧范围选择**：支持在右侧侧边栏通过 `Shift + 点击` 批量选中多帧进行循环试播，或仅导出所选帧。
+- **带惯性的阻尼时间轴**：左侧设置面板与右侧帧列表均支持带惯性的平滑阻尼滚动和中心磁吸贴合效果。
+
+---
+
+## 🎬 效果展示
+
+### 像素化及导出效果
+![Pixel Export Demo](./pixel_export.gif)
+
+### 精灵表 (Sprite Sheet) 导出效果
+![Sprite Sheet Export Demo](./pixel_sheet.png)
 
 ---
 
@@ -76,13 +108,11 @@ bash scripts/build_app.sh
 该脚本会首先通过 PyInstaller 编译后端 sidecar 可执行程序并拷贝至 `frontend/src-tauri/binaries/`，随后执行 Tauri 打包。
 
 #### 安装与首次打开（macOS）
-`.dmg` 是标准的拖拽式安装包：打开后把 **Perfect Pixel.app** 拖入 **Applications** 文件夹快捷方式即可。（隐藏的 `.VolumeIcon.icns` 只是 dmg 卷图标，属正常现象。）
+`.dmg` 是标准的拖拽式安装包：打开后把 **Perfect Pixel.app** 拖入 **Applications** 文件夹快捷方式即可。
 
 Release 构建为 **ad-hoc 签名但未公证**（无 Apple Developer 证书），首次打开 macOS 会提示"无法验证开发者"。打开方式：
-- **右键点击** App → **打开** → **仍要打开**；或
+- **右键点击** App → **打开** → **仍要打开**；或者
 - 在终端执行 `xattr -dr com.apple.quarantine "/Applications/Perfect Pixel.app"`（移除下载隔离标志）。
-
-首次打开后不会再提示。
 
 ---
 
@@ -113,23 +143,41 @@ curl -F video=@test.mp4 -F output_scale=4 http://127.0.0.1:8765/api/jobs
 # 查询任务状态
 curl http://127.0.0.1:8765/api/jobs/<job_id>
 ```
+
 完整的接口设计、参数负载以及 sidecar 集成模式请参考接口协议文档 [`docs/API.md`](./docs/API.md)。
 
-#### 时序稳定性参数
-视频处理默认开启多套时序稳定性机制（均为可选，作为 `POST /api/jobs` 的表单字段透传）：
+---
 
-| 参数 | 默认 | 用途 |
-| :--- | :--- | :--- |
-| `adaptive_grid` | `true` | 每帧重新精细化网格并与前一帧 EMA 混合 |
-| `grid_blend` | `0.7` | 网格线 EMA 的前一帧权重 `[0, 1]` |
-| `temporal_smoothing` | `true` | 输出颜色逐像素 EMA 平滑（带变化检测） |
-| `temporal_alpha` | `0.4` | 输出 EMA 的当前帧权重 `(0, 1]` |
-| `scene_change_threshold` | `30.0` | 像素变化超此值则直通，不做平滑 |
-| `vote_frames` | `5` | 用前 N 帧中位数投票锁定网格尺寸 |
-| `denoise` | `false` | 可选的保边去压缩伪影预处理 |
-| `denoise_strength` | `5.0` | 去噪强度（`>=0`） |
+## ⚙️ REST API 主要端点说明
 
-同时设 `adaptive_grid=false`、`temporal_smoothing=false` 可复现旧行为（锁第一帧坐标、无颜色平滑）。
+#### 1. 提交视频任务 (`POST /api/jobs`)
+提交视频文件进行像素化处理，支持以下稳定性参数：
+- `adaptive_grid`: (`true/false`) 是否在帧间平滑混合网格线坐标。
+- `grid_blend`: (`0.0 - 1.0`) 网格 EMA 混合权重。
+- `temporal_smoothing`: (`true/false`) 是否启用像素颜色 EMA 平滑。
+- `temporal_alpha`: (`0.0 - 1.0`) 颜色平滑权重。
+- `scene_change_threshold`: 场景切换阈值，超出该值则直通，不作平滑。
+- `vote_frames`: 用前 N 帧的中位数投票决定最佳网格基础尺寸。
+- `denoise`: (`true/false`) 是否开启去压缩伪影的保边降噪。
+
+#### 2. 关键帧分析 (`POST /api/jobs/{job_id}/keyframes`)
+检测序列中的关键过渡动作帧：
+- `threshold`: 检测变化的阈值灵敏度。
+- `method`: (`adjacent` | `flow`) 关键帧检测算法（相邻帧差异法或光流法）。
+
+#### 3. 背景去除 (`POST /api/jobs/{job_id}/background-removal`)
+批量剔除像素帧背景，保留透明度：
+- `background_color`: 目标背景色或自动检测。
+- `threshold`: 背景提取容差。
+- `feather`: 边缘羽化模糊半径。
+- `edge_connected`: (`true/false`) 是否仅从边缘向内连通清除背景。
+
+#### 4. 导出任务 (`POST /api/jobs/{job_id}/exports`)
+按指定格式打包导出：
+- `format`: 支持 `png_sequence`、`gif`、`sprite_sheet` 和 `single_png`。
+- `frame_selection`: 自定义导出的帧索引或范围。
+- `size`: 目标输出倍率或尺寸。
+- `sprite_columns` / `sprite_rows`: 自定义雪碧图导出的网格行列数。
 
 ---
 

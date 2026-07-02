@@ -1,6 +1,6 @@
 # Perfect Pixel Enhanced
 
-> **Auto detect, refine, and get perfect pixel art from single frames and video sequences.**
+> **Auto-detect, refine, and extract perfect pixel art from single frames and video sequences.**
 
 [English](readme.md) | [简体中文](readme_zh.md)
 
@@ -10,13 +10,13 @@
 ---
 
 ## 📌 Project Origin & Fork Information
-This project is an enhanced **fork** of the original [theamusing/perfectPixel](https://github.com/theamusing/perfectPixel) repository.
+This project is an enhanced **fork** of the original [theamusing/perfectPixel](https://github.com/theamusing/perfectPixel) repository. 
 
-While the original tool was designed for refining single static pixel-style images, this enhanced fork extends the core grid refinement algorithm to support **video processing**, **temporal stability tuning**, and provides a **standalone cross-platform desktop application**.
+While the original tool was designed for refining single static pixel-style images, this enhanced fork extends the core grid refinement algorithm to support **video processing**, **temporal stability tuning**, **advanced post-processing (background removal & keyframe analysis)**, **batch exporting options**, and provides a **standalone, zero-dependency desktop application**.
 
 ---
 
-## ✨ Key Enhancements (This Fork)
+## 🚀 Key Enhancements (This Fork)
 
 ### 1. Video Sequence & Temporal Stability Processing
 - **Video to Pixel Art**: Extract, process, and refine MP4/MOV/AVI video frames into a pixel-perfect PNG sequence.
@@ -25,10 +25,40 @@ While the original tool was designed for refining single static pixel-style imag
 - **Adaptive Grid & Temporal Smoothing**: Blends refined coordinates over time using exponential moving average (EMA) smoothing to ensure liquid-smooth movements without grid popping.
 - **Denoising Preprocessing**: Filters compression artifacts on frames before grid estimation.
 
-### 2. Standalone Desktop Client (Tauri + React + FastAPI)
-- **Zero-Dependency Bundle**: Bundles a Python FastAPI processing server as a compiled sidecar executable. Users do not need Python, Node, or Rust installed to run the final app.
-- **Spotify-Inspired Immersive Dark UI**: A sleek, charcoal-black player interface with interactive settings, a volume-slider style range scrubber, and custom dropdown selects.
-- **Vertical Tactile Timeline**: A vertical snap-scrolling album timeline on the right. Scroll manually using mouse wheel (updating preview frames in real-time with kinetic snapping) or watch it automatically center active frames during playback.
+### 2. Advanced Post-Processing
+- **Alpha-Preserving Background Removal**: Isolate characters and sprites from backgrounds using customizable parameters:
+  - `background_color`: Color to target (auto-detected or manually specified).
+  - `threshold`: Sensitivity of background matching.
+  - `feather`: Edge smoothing radius `[0, 8]` to blend pixel edges.
+  - `block_size`: Connectivity radius for background seeds.
+  - `edge_connected`: Restricts removal to edges to preserve internal pixels of matching colors.
+- **Keyframe Analysis**: Automatically identify key animation frames using:
+  - **Adjacent Difference**: Compares consecutive frames to detect pixel changes.
+  - **Optical Flow**: Analyzes motion vectors between frames to identify key action states.
+
+### 3. Custom Batch Exporting
+Export processed sequences with full customizability:
+- **Formats**: Supports `png_sequence`, `gif`, `sprite_sheet`, and `single_png`.
+- **Custom Sprite Sheets**: Configure custom grid dimensions (`columns` x `rows`) and specify padding modes (`repeat_last` frame or leave trailing frames blank).
+- **Target FPS & Loops**: Control playback rate and loop settings for exported GIFs and sequences.
+- **Auto-Renaming**: Handles duplicate output paths intelligently to prevent accidental overwrites.
+
+### 4. Standalone Desktop Client (Tauri + React + FastAPI)
+- **Zero-Dependency Bundle**: Bundles the Python FastAPI processing server as an optimized, compiled `onedir` sidecar executable. Cold start times are reduced from **12.8s to ~0.3s**! No Python, Node, or Rust runtimes are needed by the end user.
+- **Spotify-Inspired Immersive Dark UI**: A charcoal-black player interface with interactive settings, custom dropdowns, and settings panels.
+- **Custom Scrollable Wheel Picker**: Replaced standard dropdowns with a smooth, tactile scroll-wheel picker for setting playback FPS and other values.
+- **Interactive Range Selection**: Shift-click to select multiple frames in the sidebar, set loop playback over the selection, or export a customized subset of frames.
+- **Inertial Timeline Scrolling**: Left settings panel and right-hand frame list feature custom momentum-based scroll physics with kinetic snapping.
+
+---
+
+## 🎬 Showcase
+
+### Pixel Export Demo
+![Pixel Export Demo](./pixel_export.gif)
+
+### Sprite Sheet Export Demo
+![Sprite Sheet Export Demo](./pixel_sheet.png)
 
 ---
 
@@ -77,14 +107,12 @@ bash scripts/build_app.sh
 ```
 This runs the PyInstaller sidecar builder first, copying target binaries under `frontend/src-tauri/binaries/`, and compiles the Tauri bundle.
 
-#### Installing & first launch (macOS)
-The `.dmg` is a standard drag-and-drop installer: open it and drag **Perfect Pixel.app** into the **Applications** folder shortcut. (The hidden `.VolumeIcon.icns` is just the volume icon — normal.)
+#### Installing & First Launch (macOS)
+The `.dmg` is a standard drag-and-drop installer: open it and drag **Perfect Pixel.app** into the **Applications** folder.
 
 The release builds are **ad-hoc signed but not notarized** (no Apple Developer certificate), so on first launch macOS Gatekeeper will say it "cannot be verified." To open it:
 - **Right-click** the app → **Open** → **Open anyway**; or
 - Run `xattr -dr com.apple.quarantine "/Applications/Perfect Pixel.app"` in Terminal (removes the download quarantine flag).
-
-After the first launch the prompt won't reappear.
 
 ---
 
@@ -115,23 +143,41 @@ curl -F video=@test.mp4 -F output_scale=4 http://127.0.0.1:8765/api/jobs
 # Poll job status
 curl http://127.0.0.1:8765/api/jobs/<job_id>
 ```
-See the full endpoint contract, parameter payloads, and sidecar integration details in [`docs/API.md`](./docs/API.md).
 
-#### Temporal Stability Parameters
-Video processing enables several temporal-stability mechanisms by default (all optional, exposed as form fields on `POST /api/jobs`):
+For more endpoints and parameter specifications, see [`docs/API.md`](./docs/API.md).
 
-| Parameter | Default | Purpose |
-| :--- | :--- | :--- |
-| `adaptive_grid` | `true` | Per-frame grid refinement EMA-blended with the previous frame |
-| `grid_blend` | `0.7` | Previous-frame weight for the grid-line EMA `[0, 1]` |
-| `temporal_smoothing` | `true` | Per-pixel EMA over output colours with change detection |
-| `temporal_alpha` | `0.4` | Current-frame weight for the output EMA `(0, 1]` |
-| `scene_change_threshold` | `30.0` | Pixels changing more than this bypass smoothing |
-| `vote_frames` | `5` | Median-vote the locked grid size over the first N frames |
-| `denoise` | `false` | Optional edge-preserving denoising of compression artifacts |
-| `denoise_strength` | `5.0` | Denoising strength (`>=0`) |
+---
 
-Set `adaptive_grid=false` and `temporal_smoothing=false` together to reproduce the legacy "lock first-frame coordinates, no colour smoothing" behaviour.
+## ⚙️ REST API Endpoints Overview
+
+#### 1. Submit Video Job (`POST /api/jobs`)
+Submit a video file for processing with temporal stability parameters:
+- `adaptive_grid`: (`true/false`) Blend grid coordinates across frames.
+- `grid_blend`: (`0.0 - 1.0`) EMA weight for grid lines.
+- `temporal_smoothing`: (`true/false`) EMA color smoothing.
+- `temporal_alpha`: (`0.0 - 1.0`) Color smoothing factor.
+- `scene_change_threshold`: Threshold to bypass smoothing on scene cuts.
+- `vote_frames`: Number of initial frames to vote on optimal grid dimensions.
+- `denoise`: (`true/false`) Enable edge-preserving denoising.
+
+#### 2. Keyframe Analysis (`POST /api/jobs/{job_id}/keyframes`)
+Detect key transition frames on processed sequences:
+- `threshold`: Delta value for detecting key changes.
+- `method`: (`adjacent` | `flow`) Keyframe detection algorithm.
+
+#### 3. Background Removal (`POST /api/jobs/{job_id}/background-removal`)
+Batch remove backgrounds from processed frames:
+- `background_color`: Target color (hex/RGB) or auto-detect.
+- `threshold`: Extraction tolerance.
+- `feather`: Edge blur radius.
+- `edge_connected`: (`true/false`) Only remove regions connected to boundaries.
+
+#### 4. Export Job (`POST /api/jobs/{job_id}/exports`)
+Export frames in various custom formats:
+- `format`: (`png_sequence` | `gif` | `sprite_sheet` | `single_png`).
+- `frame_selection`: Specific frame ranges or indices to export.
+- `size`: Output scale settings.
+- `sprite_columns` / `sprite_rows`: Dimensions for custom sprite sheets.
 
 ---
 
