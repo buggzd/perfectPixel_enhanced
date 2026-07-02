@@ -20,5 +20,5 @@ __pycache__/
 *$py.class
 
 # Local test export files
-pixel_export.gif
-pixel_sheet.png
+/pixel_export.gif
+/pixel_sheet.png

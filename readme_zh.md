@@ -55,10 +55,10 @@
 ## 🎬 效果展示
 
 ### 像素化及导出效果
-![Pixel Export Demo](./pixel_export.gif)
+![Pixel Export Demo](./assets/pixel_export.gif)
 
 ### 精灵表 (Sprite Sheet) 导出效果
-![Sprite Sheet Export Demo](./pixel_sheet.png)
+![Sprite Sheet Export Demo](./assets/pixel_sheet.png)
 
 ---
 

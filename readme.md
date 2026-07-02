@@ -55,10 +55,10 @@ Export processed sequences with full customizability:
 ## 🎬 Showcase
 
 ### Pixel Export Demo
-![Pixel Export Demo](./pixel_export.gif)
+![Pixel Export Demo](./assets/pixel_export.gif)
 
 ### Sprite Sheet Export Demo
-![Sprite Sheet Export Demo](./pixel_sheet.png)
+![Sprite Sheet Export Demo](./assets/pixel_sheet.png)
 
 ---
 
