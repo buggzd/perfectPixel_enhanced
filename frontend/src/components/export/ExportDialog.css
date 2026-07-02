@@ -309,10 +309,9 @@
   color: #fff;
 }
 
-/* 4x4 Grid Preview */
-.export-preview-grid-4x4 {
+/* Sprite Sheet Grid Preview */
+.export-preview-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   background: rgba(10, 12, 16, 0.4);
   padding: 10px;

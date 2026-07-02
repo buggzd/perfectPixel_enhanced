@@ -7,7 +7,7 @@ re-emits them in one of four formats:
 
 * ``png_sequence``     — PNG sequence + ``manifest.json`` into a directory.
 * ``gif``              — animated GIF file.
-* ``sprite_sheet_4x4`` — single 4×4 PNG atlas.
+* ``sprite_sheet``     — single PNG atlas with configurable rows/columns.
 * ``single_png``       — one PNG.
 
 Exporting never re-runs the pixel-perfect pipeline; it only selects, resizes
@@ -36,6 +36,7 @@ __all__ = [
     "validate_filename_template",
     "export_png_sequence",
     "export_gif",
+    "export_sprite_sheet",
     "export_sprite_sheet_4x4",
     "export_single_png",
 ]
@@ -45,6 +46,7 @@ ProgressCallback = Callable[[int, int], None]
 VALID_EXPORT_FORMATS = {
     "png_sequence",
     "gif",
+    "sprite_sheet",
     "sprite_sheet_4x4",
     "single_png",
 }
@@ -176,21 +178,23 @@ def select_frames(
     return base
 
 
-def _apply_sprite_16_rule(
-    indices: List[int], pad_mode: str
+def _apply_sprite_grid_rule(
+    indices: List[int], pad_mode: str, *, columns: int, rows: int
 ) -> List[Optional[int]]:
-    """Pad/truncate a frame list to exactly 16 entries for a 4×4 sheet.
+    """Pad/truncate a frame list to exactly columns × rows entries.
 
-    Returns a 16-length list; entries are source indices or ``None`` for
+    Returns a fixed-length list; entries are source indices or ``None`` for
     transparent padding cells.
     """
-    if len(indices) >= 16:
-        return indices[:16]
+    total_cells = columns * rows
+    if len(indices) >= total_cells:
+        return indices[:total_cells]
     out: List[Optional[int]] = list(indices)
-    need = 16 - len(out)
+    need = total_cells - len(out)
     if pad_mode == "error":
         raise ExportError(
-            f"sprite_sheet_4x4 needs 16 frames, got {len(indices)} (pad=error)"
+            f"sprite_sheet needs {total_cells} frames for {columns}x{rows}, "
+            f"got {len(indices)} (pad=error)"
         )
     if pad_mode == "repeat_last":
         last = indices[-1]
@@ -198,6 +202,26 @@ def _apply_sprite_16_rule(
     else:  # transparent
         out.extend([None] * need)
     return out
+
+
+def _apply_sprite_16_rule(indices: List[int], pad_mode: str) -> List[Optional[int]]:
+    """Backward-compatible 4×4 sprite sheet rule."""
+    return _apply_sprite_grid_rule(indices, pad_mode, columns=4, rows=4)
+
+
+def _validate_sprite_grid(columns: int, rows: int) -> Tuple[int, int]:
+    try:
+        columns = int(columns)
+        rows = int(rows)
+    except (TypeError, ValueError):
+        raise ExportError("sprite sheet columns and rows must be integers")
+    if columns < 1 or rows < 1:
+        raise ExportError("sprite sheet columns and rows must be >= 1")
+    if columns > 64 or rows > 64:
+        raise ExportError("sprite sheet columns and rows must be <= 64")
+    if columns * rows > 4096:
+        raise ExportError("sprite sheet cannot exceed 4096 cells")
+    return columns, rows
 
 
 # ---------------------------------------------------------------------------
@@ -578,7 +602,7 @@ def export_gif(
             "frame_count": len(indices)}
 
 
-def export_sprite_sheet_4x4(
+def export_sprite_sheet(
     frames_dir: str,
     output_frames: Sequence[str],
     output_path: str,
@@ -589,11 +613,14 @@ def export_sprite_sheet_4x4(
     size: Dict[str, Any],
     fps: Optional[float],
     pad_mode: str,
+    columns: int = 4,
+    rows: int = 4,
     project_name: str,
     source_name: str,
     on_progress: Optional[ProgressCallback] = None,
 ) -> Dict[str, Any]:
-    """Write a 4×4 PNG sprite sheet (left-to-right, top-to-bottom)."""
+    """Write a PNG sprite sheet (left-to-right, top-to-bottom)."""
+    columns, rows = _validate_sprite_grid(columns, rows)
     if pad_mode not in _SPRITE_PAD_MODES:
         raise ExportError(f"sprite pad mode must be one of {sorted(_SPRITE_PAD_MODES)}")
     if os.path.exists(output_path) and not os.path.isfile(output_path):
@@ -608,19 +635,25 @@ def export_sprite_sheet_4x4(
     indices = select_frames(
         frame_selection, total_frames=len(output_frames), processed_fps=processed_fps
     )
-    cells = _apply_sprite_16_rule(indices, pad_mode)  # 16 entries, None=transparent
+    cells = _apply_sprite_grid_rule(
+        indices, pad_mode, columns=columns, rows=rows
+    )  # fixed grid length; None=transparent
 
     src_w, src_h = _frame_dims(frames_dir, output_frames[indices[0]])
     out_w, out_h, bg_bgra, has_alpha = compute_export_size(size, src_w, src_h)
     first = _read_frame(frames_dir, output_frames[indices[0]])
     has_alpha = has_alpha or (first.ndim == 3 and first.shape[2] == 4)
     channels = 4 if has_alpha else 3
-    canvas = np.full((out_h * 4, out_w * 4, channels), bg_bgra[:channels], dtype=np.uint8)
+    canvas = np.full(
+        (out_h * rows, out_w * columns, channels),
+        bg_bgra[:channels],
+        dtype=np.uint8,
+    )
 
     manifest_frames = []
     total = len(cells)
     for i, src_idx in enumerate(cells):
-        row, col = divmod(i, 4)
+        row, col = divmod(i, columns)
         x0, y0 = col * out_w, row * out_h
         if src_idx is None:
             # transparent cell — leave background
@@ -646,16 +679,53 @@ def export_sprite_sheet_4x4(
         raise ExportError(f"failed to write sprite sheet: {output_path}")
 
     manifest = {
-        "format": "sprite_sheet_4x4",
+        "format": "sprite_sheet",
         "file": os.path.basename(output_path),
         "fps": fps,
         "frame_width": out_w,
         "frame_height": out_h,
-        "columns": 4,
-        "rows": 4,
+        "columns": columns,
+        "rows": rows,
         "frames": manifest_frames,
     }
     return {"written_files": [output_path], "manifest": manifest}
+
+
+def export_sprite_sheet_4x4(
+    frames_dir: str,
+    output_frames: Sequence[str],
+    output_path: str,
+    *,
+    overwrite: bool,
+    frame_selection: Dict[str, Any],
+    processed_fps: Optional[float],
+    size: Dict[str, Any],
+    fps: Optional[float],
+    pad_mode: str,
+    project_name: str,
+    source_name: str,
+    on_progress: Optional[ProgressCallback] = None,
+) -> Dict[str, Any]:
+    """Write a 4×4 PNG sprite sheet for older callers."""
+    result = export_sprite_sheet(
+        frames_dir,
+        output_frames,
+        output_path,
+        overwrite=overwrite,
+        frame_selection=frame_selection,
+        processed_fps=processed_fps,
+        size=size,
+        fps=fps,
+        pad_mode=pad_mode,
+        columns=4,
+        rows=4,
+        project_name=project_name,
+        source_name=source_name,
+        on_progress=on_progress,
+    )
+    if "manifest" in result:
+        result["manifest"]["format"] = "sprite_sheet_4x4"
+    return result
 
 
 def export_single_png(

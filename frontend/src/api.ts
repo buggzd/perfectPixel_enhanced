@@ -256,7 +256,7 @@ export async function deleteJob(jobId: string): Promise<void> {
 
 // --- Export-related Types and APIs ---
 
-export type ExportFormat = "png_sequence" | "gif" | "sprite_sheet_4x4" | "single_png";
+export type ExportFormat = "png_sequence" | "gif" | "sprite_sheet" | "sprite_sheet_4x4" | "single_png";
 
 export interface ExportFrameSelection {
   mode: "all" | "current" | "range" | "indices";
@@ -291,6 +291,8 @@ export interface CreateExportRequest {
   frame_selection: ExportFrameSelection;
   size: ExportSizeOptions;
   sprite_pad?: "repeat_last" | "transparent" | "error";
+  sprite_columns?: number;
+  sprite_rows?: number;
 }
 
 export interface ExportStatusResponse {

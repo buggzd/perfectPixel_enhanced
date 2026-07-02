@@ -39,6 +39,7 @@ from perfect_pixel.exporting import (  # noqa: E402
     VALID_EXPORT_FORMATS,
     export_gif,
     export_png_sequence,
+    export_sprite_sheet,
     export_single_png,
     export_sprite_sheet_4x4,
 )
@@ -603,6 +604,8 @@ class ExportRequest(BaseModel):
     frame_selection: Dict[str, Any]
     size: Dict[str, Any]
     sprite_pad: str = "repeat_last"
+    sprite_columns: int = 4
+    sprite_rows: int = 4
 
 
 def _get_export(job: Job, export_id: str) -> ExportJob:
@@ -659,11 +662,13 @@ def _run_export(job: Job, exp: ExportJob, req: ExportRequest) -> None:
             result = export_gif(
                 **common, fps=fps, loop=req.loop,
             )
-        elif req.format == "sprite_sheet_4x4":
-            result = export_sprite_sheet_4x4(
+        elif req.format in {"sprite_sheet", "sprite_sheet_4x4"}:
+            result = export_sprite_sheet(
                 **common,
                 fps=req.fps,
                 pad_mode=req.sprite_pad,
+                columns=req.sprite_columns,
+                rows=req.sprite_rows,
                 project_name=project,
                 source_name=source,
             )
@@ -772,6 +777,9 @@ def create_export(job_id: str, req: ExportRequest):
             )
         if job.frame_width and job.frame_height:
             compute_export_size(req.size, job.frame_width, job.frame_height)
+        if req.format in {"sprite_sheet", "sprite_sheet_4x4"}:
+            from perfect_pixel.exporting import _validate_sprite_grid
+            _validate_sprite_grid(req.sprite_columns, req.sprite_rows)
     except HTTPException:
         raise
     except ExportError as exc:

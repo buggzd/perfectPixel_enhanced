@@ -44,6 +44,25 @@ interface MetadataState {
   loaded: boolean;
 }
 
+type SpriteGridPreset = "4x4" | "8x4" | "8x8" | "16x8" | "16x16" | "custom";
+
+const SPRITE_GRID_PRESETS: Array<{
+  value: SpriteGridPreset;
+  label: string;
+  columns: number;
+  rows: number;
+}> = [
+  { value: "4x4", label: "4 × 4", columns: 4, rows: 4 },
+  { value: "8x4", label: "8 × 4", columns: 8, rows: 4 },
+  { value: "8x8", label: "8 × 8", columns: 8, rows: 8 },
+  { value: "16x8", label: "16 × 8", columns: 16, rows: 8 },
+  { value: "16x16", label: "16 × 16", columns: 16, rows: 16 },
+];
+
+const clampSpriteGridValue = (value: number) => {
+  return Math.max(1, Math.min(64, Math.floor(value) || 1));
+};
+
 export function ExportDialog({
   jobId,
   frames,
@@ -57,6 +76,7 @@ export function ExportDialog({
 
   // Tabs / Formats
   const [format, setFormat] = useState<ExportFormat>("png_sequence");
+  const isSpriteSheet = format === "sprite_sheet" || format === "sprite_sheet_4x4";
 
   // Output Path
   const [outputPath, setOutputPath] = useState<string>("");
@@ -80,12 +100,14 @@ export function ExportDialog({
   const [targetFps, setTargetFps] = useState<string>("");
   const [maxFrames, setMaxFrames] = useState<string>("");
   const [selectedIndices] = useState<number[]>(() => {
-    return selectedFrames.length > 0 ? selectedFrames : [currentFrameIndex];
+    return selectedFrames.length > 0 ? [...selectedFrames].sort((a, b) => a - b) : [];
   });
 
-  // 4x4 Sprite Sheet details
-  const [spriteSampling, setSpriteSampling] = useState<"first_16" | "from_current" | "even_16">("first_16");
+  // Sprite Sheet details
   const [insufficientFrames, setInsufficientFrames] = useState<"repeat_last" | "transparent" | "error">("repeat_last");
+  const [spritePreset, setSpritePreset] = useState<SpriteGridPreset>("4x4");
+  const [spriteColumns, setSpriteColumns] = useState<number>(4);
+  const [spriteRows, setSpriteRows] = useState<number>(4);
 
   // Size Options
   const [sizeMode, setSizeMode] = useState<"source" | "scale" | "custom">("source");
@@ -114,6 +136,27 @@ export function ExportDialog({
 
   // Path warnings
   const [pathWarning, setPathWarning] = useState<string | null>(null);
+  const spriteCellCount = spriteColumns * spriteRows;
+  const sourceFrameCount = metadata.originalFps > 0 ? metadata.frameCount : frames.length;
+  const selectedSequenceIndices = useMemo(() => {
+    return selectedIndices.length > 0
+      ? selectedIndices.filter((idx) => frames.some((frame) => frame.index === idx))
+      : frames.map((frame) => frame.index);
+  }, [selectedIndices, frames]);
+  const selectedSequenceCount = selectedSequenceIndices.length;
+  const spriteOverflowCount = Math.max(0, selectedSequenceCount - spriteCellCount);
+  const spriteOverflowWarning = isSpriteSheet && spriteOverflowCount > 0
+    ? t.spriteOverflowWarning(selectedSequenceCount, spriteCellCount, spriteOverflowCount)
+    : null;
+
+  const applySpritePreset = (preset: SpriteGridPreset) => {
+    setSpritePreset(preset);
+    const config = SPRITE_GRID_PRESETS.find((item) => item.value === preset);
+    if (config) {
+      setSpriteColumns(config.columns);
+      setSpriteRows(config.rows);
+    }
+  };
 
   // Resolve unique path to avoid overwrite
   const checkAndResolvePath = async (path: string) => {
@@ -200,13 +243,13 @@ export function ExportDialog({
         setOutputPath("output/pixel_sequence");
       } else if (format === "gif") {
         setOutputPath("output/pixel_export.gif");
-      } else if (format === "sprite_sheet_4x4") {
+      } else if (isSpriteSheet) {
         setOutputPath("output/pixel_sheet.png");
       } else {
         setOutputPath("output/pixel_frame.png");
       }
     }
-  }, [format, outputPath, isTauri]);
+  }, [format, isSpriteSheet, outputPath, isTauri]);
 
   // Sync aspect ratio when custom width/height changes
   const handleWidthChange = (val: number) => {
@@ -279,7 +322,7 @@ export function ExportDialog({
   // Frame Range List calculation
   const selectedFrameCount = useMemo(() => {
     if (format === "single_png") return 1;
-    if (format === "sprite_sheet_4x4") return 16;
+    if (isSpriteSheet) return Math.min(selectedSequenceCount, spriteCellCount);
 
     let baseCount = 0;
     if (rangeMode === "all") {
@@ -303,7 +346,7 @@ export function ExportDialog({
     }
 
     return count;
-  }, [format, rangeMode, startFrame, endFrame, everyNFrames, maxFrames, selectedIndices, metadata.frameCount, frames]);
+  }, [format, isSpriteSheet, spriteCellCount, selectedSequenceCount, rangeMode, startFrame, endFrame, everyNFrames, maxFrames, selectedIndices, metadata.frameCount, frames]);
 
   // Estimate single frame dimensions based on size settings
   const estimatedFrameDimensions = useMemo(() => {
@@ -319,48 +362,24 @@ export function ExportDialog({
   // Total size estimation
   const totalOutputDimensions = useMemo(() => {
     const frame = estimatedFrameDimensions;
-    if (format === "sprite_sheet_4x4") {
-      return { w: frame.w * 4, h: frame.h * 4 };
+    if (isSpriteSheet) {
+      return { w: frame.w * spriteColumns, h: frame.h * spriteRows };
     }
     return frame;
-  }, [format, estimatedFrameDimensions]);
+  }, [isSpriteSheet, estimatedFrameDimensions, spriteColumns, spriteRows]);
 
   // Sprite Sheet Preview Indices
   const spritePreviewIndices = useMemo(() => {
-    if (format !== "sprite_sheet_4x4") return [];
-    
-    const count = frames.length;
-    if (count === 0) return Array(16).fill(-1);
-
-    const samplingIndices: number[] = [];
-
-    if (spriteSampling === "first_16") {
-      for (let i = 0; i < 16; i++) {
-        if (i < count) samplingIndices.push(i);
-        else samplingIndices.push(-1);
-      }
-    } else if (spriteSampling === "from_current") {
-      for (let i = 0; i < 16; i++) {
-        const idx = currentFrameIndex + i;
-        if (idx < count) samplingIndices.push(idx);
-        else samplingIndices.push(-1);
-      }
-    } else if (spriteSampling === "even_16") {
-      if (count <= 16) {
-        for (let i = 0; i < 16; i++) {
-          if (i < count) samplingIndices.push(i);
-          else samplingIndices.push(-1);
-        }
-      } else {
-        for (let i = 0; i < 16; i++) {
-          const idx = Math.floor((i / 15) * (count - 1));
-          samplingIndices.push(idx);
-        }
-      }
+    if (!isSpriteSheet) return [];
+    const frameByIndex = new Map(frames.map((frame, position) => [frame.index, position]));
+    const selectedPreview = selectedSequenceIndices
+      .slice(0, spriteCellCount)
+      .map((idx) => frameByIndex.get(idx) ?? -1);
+    while (selectedPreview.length < spriteCellCount) {
+      selectedPreview.push(-1);
     }
-
-    return samplingIndices;
-  }, [format, spriteSampling, frames, currentFrameIndex]);
+    return selectedPreview;
+  }, [isSpriteSheet, frames, selectedSequenceIndices, spriteCellCount]);
 
   // Poll export progress
   const startStatusPolling = (jobId: string, expId: string) => {
@@ -421,53 +440,22 @@ export function ExportDialog({
       return;
     }
 
+    if (spriteOverflowWarning) {
+      setErrorMessage(spriteOverflowWarning);
+      setStage("error");
+      return;
+    }
+
     setStage("validating");
     setErrorMessage(null);
 
-    // Frame selection building
-    const getActiveIndices = (): number[] => {
-      if (rangeMode === "indices") {
-        return [...selectedIndices].sort((a, b) => a - b);
-      } else if (rangeMode === "current") {
-        return [currentFrameIndex];
-      } else if (rangeMode === "range") {
-        const idxs: number[] = [];
-        const s = Math.min(startFrame, endFrame);
-        const e = Math.max(startFrame, endFrame);
-        for (let i = s; i <= e; i++) {
-          idxs.push(i);
-        }
-        return idxs;
-      } else {
-        return frames.map(f => f.index);
-      }
-    };
-
     let frame_selection: ExportFrameSelection;
 
-    if (format === "sprite_sheet_4x4") {
-      const source_indices = getActiveIndices();
+    if (isSpriteSheet) {
       frame_selection = {
-        mode: "indices"
+        mode: "indices",
+        indices: selectedSequenceIndices
       };
-
-      if (spriteSampling === "first_16") {
-        frame_selection.indices = source_indices.slice(0, 16);
-      } else if (spriteSampling === "from_current") {
-        const curPos = source_indices.indexOf(currentFrameIndex);
-        const startPos = curPos !== -1 ? curPos : 0;
-        frame_selection.indices = source_indices.slice(startPos, startPos + 16);
-      } else if (spriteSampling === "even_16") {
-        if (source_indices.length <= 16) {
-          frame_selection.indices = source_indices;
-        } else {
-          const idxs: number[] = [];
-          for (let i = 0; i < 16; i++) {
-            idxs.push(source_indices[Math.floor((i / 15) * (source_indices.length - 1))]);
-          }
-          frame_selection.indices = idxs;
-        }
-      }
     } else {
       frame_selection = {
         mode: rangeMode,
@@ -524,8 +512,10 @@ export function ExportDialog({
     } else if (format === "gif") {
       request.fps = fps;
       request.loop = loop;
-    } else if (format === "sprite_sheet_4x4") {
+    } else if (isSpriteSheet) {
       request.sprite_pad = insufficientFrames;
+      request.sprite_columns = spriteColumns;
+      request.sprite_rows = spriteRows;
     }
 
     try {
@@ -658,9 +648,9 @@ export function ExportDialog({
                 <span>{t.gifTab}</span>
               </button>
               <button
-                className={`export-tab-btn ${format === "sprite_sheet_4x4" ? "active" : ""}`}
+                className={`export-tab-btn ${isSpriteSheet ? "active" : ""}`}
                 onClick={() => {
-                  setFormat("sprite_sheet_4x4");
+                  setFormat("sprite_sheet");
                   setOutputPath(isTauri ? "output/pixel_sheet.png" : "");
                 }}
               >
@@ -722,6 +712,13 @@ export function ExportDialog({
               >
                 &times;
               </button>
+            </div>
+          )}
+
+          {spriteOverflowWarning && stage !== "error" && (
+            <div className="export-validation-msg" style={{ background: "rgba(251, 191, 36, 0.1)", borderColor: "rgba(251, 191, 36, 0.2)", color: "#fbbf24" }}>
+              <AlertTriangle size={16} />
+              <span>{spriteOverflowWarning}</span>
             </div>
           )}
 
@@ -815,7 +812,7 @@ export function ExportDialog({
             </div>
           )}
 
-          {(format === "sprite_sheet_4x4" || format === "single_png") && (
+          {(isSpriteSheet || format === "single_png") && (
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <label className="export-checkbox-row">
                 <input
@@ -828,8 +825,8 @@ export function ExportDialog({
             </div>
           )}
 
-          {/* Frame Range Section (Hidden for Single frame and fixed grid preview for 4x4) */}
-          {format !== "single_png" && format !== "sprite_sheet_4x4" && (
+          {/* Frame Range Section */}
+          {format !== "single_png" && !isSpriteSheet && (
             <div className="export-form-group">
               <div className="export-section-title">{t.frameRangeLabel}</div>
               <div className="export-inputs-row">
@@ -925,23 +922,79 @@ export function ExportDialog({
             </div>
           )}
 
-          {/* 4x4 Sampling Options */}
-          {format === "sprite_sheet_4x4" && (
+          {/* Sprite Sheet Options */}
+          {isSpriteSheet && (
             <div className="export-form-group">
-              <div className="export-section-title">{t.spriteSamplingLabel}</div>
+              <div className="export-summary-box" style={{ background: "rgba(30, 215, 96, 0.05)", border: "1px dashed rgba(30, 215, 96, 0.2)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--accent-green)" }}>
+                  <CheckCircle2 size={16} />
+                  <span style={{ fontSize: "13px", fontWeight: "500", color: "#fff" }}>
+                    {t.spriteSourceSelectionInfo(sourceFrameCount, selectedSequenceCount)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="export-section-title">{t.spriteGridLabel}</div>
               <div className="export-inputs-row">
                 <div className="export-form-group">
-                  <label>Sampling Mode</label>
+                  <label>{t.spritePresetLabel}</label>
                   <select
                     className="export-select-styled"
-                    value={spriteSampling}
-                    onChange={(e) => setSpriteSampling(e.target.value as any)}
+                    value={spritePreset}
+                    onChange={(e) => applySpritePreset(e.target.value as SpriteGridPreset)}
                   >
-                    <option value="first_16">{t.samplingFirst16}</option>
-                    <option value="from_current">{t.samplingCurrent}</option>
-                    <option value="even_16">{t.samplingEven16}</option>
+                    {SPRITE_GRID_PRESETS.map((preset) => (
+                      <option key={preset.value} value={preset.value}>{preset.label}</option>
+                    ))}
+                    <option value="custom">{t.spriteCustomGrid}</option>
                   </select>
                 </div>
+                <div className="export-form-group">
+                  <label>{t.spriteCellsLabel}</label>
+                  <input
+                    type="text"
+                    className="export-path-input"
+                    value={`${spriteColumns} × ${spriteRows} = ${spriteCellCount}`}
+                    readOnly
+                  />
+                </div>
+              </div>
+
+              {spritePreset === "custom" && (
+                <div className="export-inputs-row" style={{ marginTop: "8px" }}>
+                  <div className="export-form-group">
+                    <label>{t.spriteColumnsLabel}</label>
+                    <input
+                      type="number"
+                      className="export-path-input"
+                      value={spriteColumns}
+                      min="1"
+                      max="64"
+                      onChange={(e) => {
+                        setSpritePreset("custom");
+                        setSpriteColumns(clampSpriteGridValue(parseInt(e.target.value, 10)));
+                      }}
+                    />
+                  </div>
+                  <div className="export-form-group">
+                    <label>{t.spriteRowsLabel}</label>
+                    <input
+                      type="number"
+                      className="export-path-input"
+                      value={spriteRows}
+                      min="1"
+                      max="64"
+                      onChange={(e) => {
+                        setSpritePreset("custom");
+                        setSpriteRows(clampSpriteGridValue(parseInt(e.target.value, 10)));
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="export-section-title" style={{ marginTop: "14px" }}>{t.insufficientFramesLabel}</div>
+              <div className="export-inputs-row">
                 <div className="export-form-group">
                   <label>{t.insufficientFramesLabel}</label>
                   <select
@@ -956,12 +1009,15 @@ export function ExportDialog({
                 </div>
               </div>
 
-              {/* 4x4 Grid preview container */}
+              {/* Grid preview container */}
               <div style={{ marginTop: "12px" }}>
                 <label style={{ display: "block", fontSize: "12px", marginBottom: "6px", color: "var(--text-muted)" }}>
-                  Grid Preview Grid
+                  {t.spritePreviewLabel}
                 </label>
-                <div className="export-preview-grid-4x4">
+                <div
+                  className="export-preview-grid"
+                  style={{ gridTemplateColumns: `repeat(${spriteColumns}, minmax(0, 1fr))` }}
+                >
                   {spritePreviewIndices.map((idx, index) => {
                     const frame = idx !== -1 ? frames[idx] : null;
                     return frame ? (
