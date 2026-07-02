@@ -33,11 +33,23 @@ import {
   ArrowLeft, 
   Download,
   Eraser,
-  Pipette
+  Pipette,
+  ChevronDown
 } from "lucide-react";
 import "./App.css";
 import { translations, Language } from "./i18n";
 import { ExportDialog } from "./components/export/ExportDialog";
+
+const MIN_PLAYBACK_FPS = 1;
+const MAX_PLAYBACK_FPS = 60;
+const PLAYBACK_FPS_PICKER_ITEM_HEIGHT = 28;
+const PLAYBACK_FPS_OPTIONS = Array.from(
+  { length: MAX_PLAYBACK_FPS - MIN_PLAYBACK_FPS + 1 },
+  (_, index) => MIN_PLAYBACK_FPS + index
+);
+
+const clampPlaybackFps = (value: number) =>
+  Math.max(MIN_PLAYBACK_FPS, Math.min(MAX_PLAYBACK_FPS, Math.round(value)));
 
 interface Option<T> {
   value: T;
@@ -130,6 +142,107 @@ function CustomSelect<T extends string | number>({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+interface PlaybackFpsPickerProps {
+  value: number;
+  onChange: (value: number) => void;
+  label: string;
+}
+
+function PlaybackFpsPicker({ value, onChange, label }: PlaybackFpsPickerProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const scrollTimerRef = useRef<number | null>(null);
+
+  const scrollToValue = (fps: number, behavior: ScrollBehavior = "auto") => {
+    const list = listRef.current;
+    if (!list) return;
+    list.scrollTo({
+      top: (clampPlaybackFps(fps) - MIN_PLAYBACK_FPS) * PLAYBACK_FPS_PICKER_ITEM_HEIGHT,
+      behavior,
+    });
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      if (scrollTimerRef.current !== null) {
+        window.clearTimeout(scrollTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    window.requestAnimationFrame(() => scrollToValue(value));
+  }, [isOpen, value]);
+
+  const commitScrollValue = () => {
+    const list = listRef.current;
+    if (!list) return;
+    const next = clampPlaybackFps(
+      MIN_PLAYBACK_FPS + Math.round(list.scrollTop / PLAYBACK_FPS_PICKER_ITEM_HEIGHT)
+    );
+    onChange(next);
+    scrollToValue(next, "smooth");
+  };
+
+  return (
+    <div ref={containerRef} className={`fps-wheel-select ${isOpen ? "is-open" : ""}`}>
+      <button
+        type="button"
+        className="fps-wheel-trigger"
+        onClick={() => setIsOpen((open) => !open)}
+        aria-label={label}
+        aria-expanded={isOpen}
+      >
+        <span>{value}</span>
+        <span className="fps-wheel-unit">FPS</span>
+        <ChevronDown size={12} />
+      </button>
+
+      {isOpen && (
+        <div className="fps-wheel-popover">
+          <div className="fps-wheel-fade top" />
+          <div className="fps-wheel-highlight" />
+          <div
+            ref={listRef}
+            className="fps-wheel-list"
+            onScroll={() => {
+              if (scrollTimerRef.current !== null) {
+                window.clearTimeout(scrollTimerRef.current);
+              }
+              scrollTimerRef.current = window.setTimeout(commitScrollValue, 90);
+            }}
+          >
+            {PLAYBACK_FPS_OPTIONS.map((fps) => (
+              <button
+                key={fps}
+                type="button"
+                className={`fps-wheel-option ${value === fps ? "is-active" : ""}`}
+                onClick={() => {
+                  onChange(fps);
+                  scrollToValue(fps, "smooth");
+                }}
+              >
+                {fps}
+              </button>
+            ))}
+          </div>
+          <div className="fps-wheel-fade bottom" />
+        </div>
       )}
     </div>
   );
@@ -1846,18 +1959,10 @@ function App() {
 
                           <div className="playback-speed">
                             <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{t.fps}</span>
-                            <CustomSelect
+                            <PlaybackFpsPicker
                               value={playbackFps}
-                              onChange={(val) => setPlaybackFps(val)}
-                              options={[
-                                { value: 5, label: "5 FPS" },
-                                { value: 10, label: "10 FPS" },
-                                { value: 15, label: "15 FPS" },
-                                { value: 24, label: "24 FPS" },
-                                { value: 30, label: "30 FPS" },
-                                { value: 60, label: "60 FPS" },
-                              ]}
-                              className="speed-select-custom"
+                              onChange={(fps) => setPlaybackFps(clampPlaybackFps(fps))}
+                              label={t.fps}
                             />
                           </div>
                         </div>
